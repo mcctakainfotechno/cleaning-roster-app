@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>掃除当番表アプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+        .calendar-day {
+            min-height: 120px;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 5000;
+            display: flex; align-items: center; justify-content: center;
+            background-color: rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s ease;
+        }
+        
+        #loading-overlay {
+            position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.8);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; transition: opacity 0.3s ease;
+        }
+        .spinner {
+            width: 56px; height: 56px; border: 6px solid #f3f3f3;
+            border-top: 6px solid #3498db; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- Login Overlay -->
+    <div id="login-overlay" class="fixed inset-0 bg-gray-200 flex items-center justify-center z-[10000]">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">ログイン</h2>
+            <p class="text-sm text-gray-500 text-center mb-6">続行するにはパスワードを入力してください。</p>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="password-input" class="sr-only">パスワード</label>
+                    <input type="password" id="password-input" placeholder="パスワード" class="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <p id="login-error" class="text-red-500 text-sm text-center mb-4 h-5"></p>
+                <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-3 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors duration-200">
+                    ログイン
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Member Edit Modal -->
+    <div id="edit-member-modal" class="modal-overlay hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">担当者設定の編集</h2>
+                <button id="close-edit-member-modal" class="p-2 rounded-full hover:bg-gray-200">
+                     <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <p class="text-lg font-semibold text-indigo-600 mb-4" id="edit-member-modal-name"></p>
+            <div>
+                <p class="text-sm font-medium text-gray-600 mb-2">担当できる曜日:</p>
+                <div class="grid grid-cols-3 gap-2 text-sm">
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="1"> <span>月</span></label>
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="2"> <span>火</span></label>
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="3"> <span>水</span></label>
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="4"> <span>木</span></label>
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="5"> <span>金</span></label>
+                </div>
+            </div>
+            <div class="mt-6">
+                <button id="save-member-edit-btn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">保存する</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Assignment Override Modal -->
+    <div id="override-modal" class="modal-overlay hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">当番の変更</h2>
+                <button id="close-override-modal" class="p-2 rounded-full hover:bg-gray-200">
+                     <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <p class="text-lg font-semibold text-indigo-600 mb-4" id="override-modal-date"></p>
+            <div>
+                <label for="override-member-select" class="block text-sm font-medium text-gray-700 mb-2">担当者を変更:</label>
+                <select id="override-member-select" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <!-- Options will be populated by JS -->
+                </select>
+            </div>
+            <div class="mt-6 flex justify-between gap-4">
+                <button id="save-override-btn" class="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">保存</button>
+                <button id="clear-override-btn" class="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">自動割当に戻す</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Change Modal -->
+    <div id="password-modal" class="modal-overlay hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">パスワード変更</h2>
+                <button id="close-password-modal" class="p-2 rounded-full hover:bg-gray-200">
+                    <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <form id="password-change-form">
+                <div class="space-y-4">
+                    <input type="password" id="current-password" placeholder="現在のパスワード" required class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="password" id="new-password" placeholder="新しいパスワード" required class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="password" id="confirm-new-password" placeholder="新しいパスワード (確認)" required class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <p id="password-change-error" class="text-red-500 text-sm text-center mt-4 h-5"></p>
+                <button type="submit" class="w-full mt-6 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                    変更する
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="flex h-screen bg-gray-100">
+        <!-- Sidebar for controls -->
+        <aside class="w-96 bg-white p-6 shadow-lg overflow-y-auto no-scrollbar flex flex-col">
+            <div class="mb-8">
+                <h1 class="text-2xl font-bold text-gray-900">掃除当番設定</h1>
+                <p class="text-sm text-gray-500 mt-1">当番や休日をリアルタイムで共有</p>
+            </div>
+            
+            <div class="flex-grow">
+                <!-- Member Management -->
+                <div class="mb-6">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-3">担当者リスト</h2>
+                    <div id="member-list" class="space-y-2 max-h-60 overflow-y-auto pr-2"></div>
+                    <div class="mt-4">
+                        <input type="text" id="new-member-name" placeholder="新しい担当者名" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <div class="mt-3">
+                            <p class="text-sm font-medium text-gray-600 mb-2">担当できる曜日 (指定なしは全曜日)</p>
+                            <div class="grid grid-cols-3 gap-2 text-sm">
+                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="1"> <span>月</span></label>
+                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="2"> <span>火</span></label>
+                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="3"> <span>水</span></label>
+                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="4"> <span>木</span></label>
+                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="5"> <span>金</span></label>
+                            </div>
+                        </div>
+                        <button id="add-member-btn" class="mt-3 w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">追加</button>
+                    </div>
+                </div>
+                
+                <!-- Roster Settings -->
+                <div class="mb-6">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-3">割り当て設定</h2>
+                    <label for="roster-start-date" class="block text-sm font-medium text-gray-600">当番開始日</label>
+                    <input type="date" id="roster-start-date" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+
+                <!-- Holiday Management -->
+                <div class="mb-6">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-3">特別休日リスト</h2>
+                    <div id="holiday-list" class="space-y-2 max-h-48 overflow-y-auto pr-2"></div>
+                    <div class="mt-4 flex gap-2">
+                        <input type="date" id="new-holiday-date" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <button id="add-holiday-btn" class="bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700">追加</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-auto">
+                <!-- Admin Settings -->
+                <div class="border-t pt-4">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-3">管理者設定</h2>
+                    <button id="open-password-modal" class="w-full bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">パスワード変更</button>
+                </div>
+
+                <div class="mt-6 text-center text-xs text-gray-400">
+                    <p>&copy; 2024 掃除当番アプリ. All rights reserved.</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="flex-1 p-8 overflow-y-auto">
+             <div class="max-w-7xl mx-auto">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-4">
+                        <button id="prev-month-btn" class="p-2 rounded-full hover:bg-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+                        <h2 id="current-month-year" class="text-3xl font-bold text-gray-800 w-48 text-center"></h2>
+                        <button id="next-month-btn" class="p-2 rounded-full hover:bg-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+                    </div>
+                     <button id="today-btn" class="bg-white text-indigo-600 border border-indigo-600 px-4 py-2 rounded-md hover:bg-indigo-50">今日</button>
+                </div>
+                <div>
+                    <div class="grid grid-cols-7 gap-px text-center font-semibold text-sm text-gray-500 bg-gray-200 border-l border-t border-gray-200">
+                        <div class="bg-white py-3">日</div><div class="bg-white py-3">月</div><div class="bg-white py-3">火</div><div class="bg-white py-3">水</div><div class="bg-white py-3">木</div><div class="bg-white py-3">金</div><div class="bg-white py-3">土</div>
+                    </div>
+                    <div id="calendar-grid" class="calendar-grid gap-px bg-gray-200 border-l border-t border-gray-200"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, getDocs, writeBatch, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // --- DOM ELEMENTS ---
+    const loginOverlay = document.getElementById('login-overlay');
+    const loginForm = document.getElementById('login-form');
+    const passwordInput = document.getElementById('password-input');
+    const loginError = document.getElementById('login-error');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    
+    const passwordModal = document.getElementById('password-modal');
+    const openPasswordModalBtn = document.getElementById('open-password-modal');
+    const closePasswordModalBtn = document.getElementById('close-password-modal');
+    const passwordChangeForm = document.getElementById('password-change-form');
+    const currentPasswordInput = document.getElementById('current-password');
+    const newPasswordInput = document.getElementById('new-password');
+    const confirmNewPasswordInput = document.getElementById('confirm-new-password');
+    const passwordChangeError = document.getElementById('password-change-error');
+
+    const editMemberModal = document.getElementById('edit-member-modal');
+    const closeEditMemberModalBtn = document.getElementById('close-edit-member-modal');
+    const editMemberModalNameEl = document.getElementById('edit-member-modal-name');
+    const editDayConstraintCheckboxes = document.querySelectorAll('.day-constraint-edit');
+    const saveMemberEditBtn = document.getElementById('save-member-edit-btn');
+    
+    const overrideModal = document.getElementById('override-modal');
+    const closeOverrideModalBtn = document.getElementById('close-override-modal');
+    const overrideModalDateEl = document.getElementById('override-modal-date');
+    const overrideMemberSelect = document.getElementById('override-member-select');
+    const saveOverrideBtn = document.getElementById('save-override-btn');
+    const clearOverrideBtn = document.getElementById('clear-override-btn');
+    
+    // --- FIREBASE SETUP ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyBBAqtjYFYorFBbA6WRzWFXyBpI9jEdgms",
+        authDomain: "its-workplace-beautification.firebaseapp.com",
+        projectId: "its-workplace-beautification",
+        storageBucket: "its-workplace-beautification.firebasestorage.app",
+        messagingSenderId: "698218638954",
+        appId: "1:698218638954:web:8940530c9aeb8a7841a413",
+        measurementId: "G-WFFH914KE9"
+    };
+    const appId = firebaseConfig.projectId || 'default-app-id';
+    let db, auth, settingsDoc;
+
+    if (firebaseConfig && firebaseConfig.apiKey) {
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+        settingsDoc = doc(db, `artifacts/${appId}/public/data/settings`, 'config');
+    }
+
+    loadingOverlay.style.display = 'none';
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        loginError.textContent = '';
+        if (!db) { loginError.textContent = 'データベース接続エラー'; return; }
+        try {
+            const docSnap = await getDoc(settingsDoc);
+            let correctPassword = 'password123';
+            if (docSnap.exists() && docSnap.data().appPassword) {
+                correctPassword = docSnap.data().appPassword;
+            }
+            if (passwordInput.value === correctPassword) {
+                loginOverlay.style.display = 'none';
+                loadingOverlay.style.display = 'flex';
+                runApp();
+            } else {
+                loginError.textContent = 'パスワードが違います。';
+            }
+        } catch (error) {
+            loginError.textContent = 'ログインエラー';
+        }
+    });
+
+    function runApp() {
+        let currentDate = new Date();
+        let members = [], holidays = [], rosterStartDate = null, overrides = new Map();
+        let yearlyAssignments = new Map(), currentYearForAssignments = null;
+        let currentlyEditingDate = null;
+        let currentlyEditingMemberId = null;
+
+        const membersCol = collection(db, `artifacts/${appId}/public/data/members`);
+        const holidaysCol = collection(db, `artifacts/${appId}/public/data/holidays`);
+        const overridesCol = collection(db, `artifacts/${appId}/public/data/overrides`);
+        
+        const currentMonthYearEl = document.getElementById('current-month-year');
+        const calendarGridEl = document.getElementById('calendar-grid');
+        const prevMonthBtn = document.getElementById('prev-month-btn');
+        const nextMonthBtn = document.getElementById('next-month-btn');
+        const todayBtn = document.getElementById('today-btn');
+        const memberListEl = document.getElementById('member-list');
+        const newMemberNameInput = document.getElementById('new-member-name');
+        const addMemberBtn = document.getElementById('add-member-btn');
+        const dayConstraintCheckboxes = document.querySelectorAll('.day-constraint');
+        const rosterStartDateInput = document.getElementById('roster-start-date');
+        const holidayListEl = document.getElementById('holiday-list');
+        const newHolidayDateInput = document.getElementById('new-holiday-date');
+        const addHolidayBtn = document.getElementById('add-holiday-btn');
+        
+        async function seedInitialData() {
+            const settingsSnap = await getDoc(settingsDoc);
+            if (!settingsSnap.exists() || !settingsSnap.data().appPassword) {
+                await setDoc(settingsDoc, { appPassword: 'password123' }, { merge: true });
+            }
+            const membersSnapshot = await getDocs(membersCol);
+            if (membersSnapshot.empty) {
+                const batch = writeBatch(db);
+                const initialMembers = [
+                    { name: '伊勢', constraints: [] }, { name: '藤生', constraints: [] }, { name: '森田', constraints: [] },
+                    { name: '今関', constraints: [] }, { name: '吉岡', constraints: [] }, { name: '飛知和', constraints: [] },
+                    { name: '山口', constraints: [] }, { name: '小田', constraints: [] }, { name: '小林', constraints: [] },
+                    { name: '新井', constraints: [] }, { name: '中野', constraints: [] }, { name: '清水', constraints: [] },
+                    { name: '内田', constraints: [] }, { name: '岡崎', constraints: [] }, { name: '長谷川', constraints: [] },
+                    { name: '佐下橋', constraints: [] }, { name: '林部', constraints: [] }, { name: '境田', constraints: [] },
+                    { name: '山内', constraints: [] }, { name: '寺尾', constraints: [] }, { name: '白倉', constraints: [] },
+                    { name: '佐藤', constraints: [] }, { name: '村上', constraints: [] }, { name: '熊田', constraints: [] },
+                    { name: '武澤', constraints: [] }, { name: '荒井', constraints: [] }, { name: '後藤', constraints: [] },
+                    { name: '伊藤', constraints: [] }, { name: '菱山', constraints: [] }
+                ];
+                initialMembers.forEach(m => batch.set(doc(membersCol), m));
+                await batch.commit();
+            }
+        }
+
+        function formatDate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+        function isWeekend(d) { return d.getDay() === 0 || d.getDay() === 6; }
+        function isHoliday(d) { return holidays.some(h => h.date === formatDate(d)); }
+        function isWorkingDay(d) { return !isWeekend(d) && !isHoliday(d); }
+
+        function generateAssignmentsForYear(year) {
+            _generateAssignmentsForYear(year);
+        }
+
+        function _generateAssignmentsForYear(year) {
+            if (currentYearForAssignments === year && yearlyAssignments.size > 0) return;
+            
+            yearlyAssignments.clear();
+            currentYearForAssignments = year;
+            if (members.length === 0) return;
+
+            // --- New Fair Assignment Logic ---
+
+            // 1. Create a naive roster, ignoring constraints for fairness.
+            const naiveAssignments = new Map();
+            const workingDays = [];
+            const assignmentStartDate = rosterStartDate ? new Date(rosterStartDate + 'T00:00:00') : new Date(year, 0, 1);
+            let memberIndex = 0;
+            for (let d = new Date(year, 0, 1); d <= new Date(year, 11, 31); d.setDate(d.getDate() + 1)) {
+                if (d >= assignmentStartDate && isWorkingDay(d)) {
+                    const dateString = formatDate(d);
+                    workingDays.push(dateString);
+                    const member = members[memberIndex % members.length];
+                    naiveAssignments.set(dateString, member);
+                    memberIndex++;
+                }
+            }
+            
+            // 2. Resolve conflicts by swapping.
+            const finalAssignments = new Map(Array.from(naiveAssignments.entries()).map(([date, member]) => [date, member.name]));
+            const memberMap = new Map(members.map(m => [m.name, m]));
+
+            for (const dateString of workingDays) {
+                const assignedMember = naiveAssignments.get(dateString);
+                if (!assignedMember) continue;
+
+                const dayOfWeek = new Date(dateString + 'T00:00:00').getDay();
+                const constraints = assignedMember.constraints || [];
+                
+                // If there's a conflict
+                if (constraints.length > 0 && !constraints.includes(dayOfWeek)) {
+                    // Search for a swap target
+                    let swapFound = false;
+                    // Search within +/- 14 working days
+                    for (let i = 1; i <= 14 && !swapFound; i++) {
+                        const targetIndex = workingDays.indexOf(dateString);
+                        
+                        // Look forward
+                        if (targetIndex + i < workingDays.length) {
+                            const swapDateString = workingDays[targetIndex + i];
+                            const targetMember = naiveAssignments.get(swapDateString);
+                            if (targetMember) {
+                                const targetDayOfWeek = new Date(swapDateString + 'T00:00:00').getDay();
+                                const targetConstraints = targetMember.constraints || [];
+                                
+                                // Check if swap is valid
+                                const canAssignedWorkOnSwapDate = constraints.length === 0 || constraints.includes(targetDayOfWeek);
+                                const canTargetWorkOnConflictDate = targetConstraints.length === 0 || targetConstraints.includes(dayOfWeek);
+                                
+                                if (canAssignedWorkOnSwapDate && canTargetWorkOnConflictDate) {
+                                    // Perform swap in the final assignments map
+                                    finalAssignments.set(dateString, targetMember.name);
+                                    finalAssignments.set(swapDateString, assignedMember.name);
+                                    swapFound = true;
+                                }
+                            }
+                        }
+                        
+                        // Look backward
+                        if (targetIndex - i >= 0 && !swapFound) {
+                             const swapDateString = workingDays[targetIndex - i];
+                            const targetMember = naiveAssignments.get(swapDateString);
+                             if (targetMember) {
+                                const targetDayOfWeek = new Date(swapDateString + 'T00:00:00').getDay();
+                                const targetConstraints = targetMember.constraints || [];
+                                
+                                const canAssignedWorkOnSwapDate = constraints.length === 0 || constraints.includes(targetDayOfWeek);
+                                const canTargetWorkOnConflictDate = targetConstraints.length === 0 || targetConstraints.includes(dayOfWeek);
+                                
+                                if (canAssignedWorkOnSwapDate && canTargetWorkOnConflictDate) {
+                                    finalAssignments.set(dateString, targetMember.name);
+                                    finalAssignments.set(swapDateString, assignedMember.name);
+                                    swapFound = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            yearlyAssignments = finalAssignments;
+        }
+        
+        function forceRecalculateAssignments() {
+            yearlyAssignments.clear();
+            currentYearForAssignments = null; // Force regen
+        }
+
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            currentMonthYearEl.textContent = `${year}年 ${month + 1}月`;
+            calendarGridEl.innerHTML = '';
+            generateAssignmentsForYear(year);
+            const firstDayOfMonth = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const todayString = formatDate(new Date());
+
+            for (let i = 0; i < firstDayOfMonth; i++) { calendarGridEl.insertAdjacentHTML('beforeend', '<div class="bg-gray-50 border-r border-b border-gray-200"></div>'); }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day);
+                const dateString = formatDate(date);
+                
+                let assignedMember = null;
+                let isOverridden = overrides.has(dateString);
+                if (isOverridden) {
+                    assignedMember = overrides.get(dateString);
+                } else {
+                    assignedMember = yearlyAssignments.get(dateString);
+                }
+
+                const isToday = dateString === todayString;
+                let cellClasses = 'calendar-day p-2 flex flex-col border-r border-b border-gray-200 transition-colors duration-200 relative ';
+                let dateClasses = 'text-sm font-medium ';
+
+                if (isToday) { cellClasses += 'bg-indigo-100 ring-2 ring-indigo-500 z-10'; dateClasses += 'text-indigo-700'; }
+                else if (isWeekend(date) || isHoliday(date)) { cellClasses += 'bg-gray-100 cursor-not-allowed'; dateClasses += 'text-gray-400'; }
+                else { cellClasses += 'bg-white hover:bg-gray-50 cursor-pointer'; dateClasses += 'text-gray-600'; }
+
+                let overrideIndicator = isOverridden ? `<span class="absolute top-1 right-1 text-xs text-blue-500 font-bold" title="手動変更済み">*</span>` : '';
+                const memberHtml = assignedMember 
+                    ? `<div class="mt-2 text-center bg-indigo-500 text-white text-xs font-semibold rounded-full py-1 px-2 truncate">${assignedMember}</div>` 
+                    : (isOverridden ? `<div class="mt-2 text-center bg-gray-400 text-white text-xs font-semibold rounded-full py-1 px-2 truncate">休み</div>` : '');
+                const holidayHtml = isHoliday(date) ? `<div class="mt-1 text-center bg-teal-100 text-teal-700 text-xs font-semibold rounded-full py-1 px-2 truncate">休日</div>` : '';
+                
+                const dayHtml = `<div class="${cellClasses}" data-date="${dateString}"><span class="${dateClasses}">${day}</span>${overrideIndicator}${memberHtml}${holidayHtml}</div>`;
+                calendarGridEl.insertAdjacentHTML('beforeend', dayHtml);
+            }
+        }
+
+        function renderMembers() {
+            memberListEl.innerHTML = '';
+            const dayMap = { 1: '月', 2: '火', 3: '水', 4: '木', 5: '金' };
+            const formatConstraints = (c) => c && c.length > 0 ? `<span class="text-xs text-indigo-600 ml-2">(${c.map(d => dayMap[d] || '').join(', ')})</span>` : '';
+            if (members.length === 0) { memberListEl.innerHTML = '<p class="text-sm text-gray-500">担当者がいません。</p>'; return; }
+            members.forEach((member) => {
+                const memberEl = document.createElement('div');
+                memberEl.className = 'flex items-center justify-between bg-gray-100 p-2 rounded-md';
+                const constraintsString = JSON.stringify(member.constraints || []);
+                memberEl.innerHTML = `
+                    <span class="text-sm text-gray-800 font-medium">${member.name}${formatConstraints(member.constraints)}</span>
+                    <div class="flex items-center">
+                        <button data-id="${member.id}" data-name="${member.name}" data-constraints='${constraintsString}' class="edit-member-btn text-gray-400 hover:text-indigo-500 p-1 rounded-full">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>
+                        </button>
+                        <button data-id="${member.id}" class="delete-member-btn text-gray-400 hover:text-red-500 p-1 rounded-full">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>`;
+                memberListEl.appendChild(memberEl);
+            });
+        }
+        function renderHolidays() {
+            holidayListEl.innerHTML = '';
+            if (holidays.length === 0) { holidayListEl.innerHTML = '<p class="text-sm text-gray-500">特別休日はありません。</p>'; return; }
+            const sortedHolidays = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
+            sortedHolidays.forEach(holiday => {
+                const holidayEl = document.createElement('div');
+                holidayEl.className = 'flex items-center justify-between bg-gray-100 p-2 rounded-md';
+                holidayEl.innerHTML = `<span class="text-sm text-gray-800">${holiday.date}</span><button data-id="${holiday.id}" class="delete-holiday-btn text-gray-400 hover:text-red-500 p-1 rounded-full"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
+                holidayListEl.appendChild(holidayEl);
+            });
+        }
+        
+        // --- Event Listeners and Handlers ---
+        onSnapshot(membersCol, s => { 
+            members = s.docs.map(d => ({id:d.id, ...d.data()})); 
+            members.sort((a,b) => a.name.localeCompare(b.name));
+            forceRecalculateAssignments();
+            renderMembers(); 
+            renderCalendar(); 
+        });
+        onSnapshot(holidaysCol, s => { 
+            holidays = s.docs.map(d => ({id:d.id, ...d.data()})); 
+            forceRecalculateAssignments();
+            renderHolidays(); 
+            renderCalendar(); 
+        });
+        onSnapshot(overridesCol, s => { 
+            overrides.clear(); 
+            s.docs.forEach(d => overrides.set(d.id, d.data().memberName)); 
+            renderCalendar(); 
+        });
+        onSnapshot(settingsDoc, d => { 
+            const newStartDate = d.exists() ? d.data().rosterStartDate : null;
+            if (newStartDate !== rosterStartDate) {
+                rosterStartDate = newStartDate;
+                rosterStartDateInput.value = rosterStartDate;
+                forceRecalculateAssignments();
+                renderCalendar();
+            }
+        });
+        
+        addMemberBtn.addEventListener('click', () => {
+            if (!newMemberNameInput.value.trim()) return;
+            addDoc(membersCol, { name: newMemberNameInput.value.trim(), constraints: Array.from(dayConstraintCheckboxes).filter(cb=>cb.checked).map(cb=>parseInt(cb.value)) })
+            newMemberNameInput.value = '';
+            dayConstraintCheckboxes.forEach(cb => cb.checked = false);
+        });
+        addHolidayBtn.addEventListener('click', () => {
+             if (!newHolidayDateInput.value) return;
+             addDoc(holidaysCol, { date: newHolidayDateInput.value });
+             newHolidayDateInput.value = '';
+        });
+        
+        memberListEl.addEventListener('click', e => {
+            const deleteBtn = e.target.closest('.delete-member-btn');
+            if (deleteBtn) {
+                deleteDoc(doc(membersCol, deleteBtn.dataset.id));
+                return;
+            }
+            const editBtn = e.target.closest('.edit-member-btn');
+            if (editBtn) {
+                const { id, name, constraints } = editBtn.dataset;
+                openEditMemberModal(id, name, JSON.parse(constraints));
+            }
+        });
+
+        holidayListEl.addEventListener('click', e => e.target.closest('.delete-holiday-btn') && deleteDoc(doc(holidaysCol, e.target.closest('.delete-holiday-btn').dataset.id)));
+        rosterStartDateInput.addEventListener('change', () => setDoc(settingsDoc, { rosterStartDate: rosterStartDateInput.value }, { merge: true }));
+        prevMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); });
+        nextMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); });
+        todayBtn.addEventListener('click', () => { currentDate = new Date(); renderCalendar(); });
+
+        calendarGridEl.addEventListener('click', (e) => {
+            const dayEl = e.target.closest('.calendar-day');
+            if (dayEl && dayEl.dataset.date) {
+                const dateStr = dayEl.dataset.date;
+                const date = new Date(dateStr + 'T00:00:00');
+                if (!isWeekend(date) && !isHoliday(date) || overrides.has(dateStr)) {
+                    openOverrideModal(dateStr);
+                }
+            }
+        });
+
+        function openEditMemberModal(id, name, constraints) {
+            currentlyEditingMemberId = id;
+            editMemberModalNameEl.textContent = name;
+            editDayConstraintCheckboxes.forEach(cb => {
+                cb.checked = (constraints || []).includes(parseInt(cb.value));
+            });
+            editMemberModal.classList.remove('hidden');
+        }
+
+        function openOverrideModal(dateStr) {
+            currentlyEditingDate = dateStr;
+            overrideModalDateEl.textContent = dateStr;
+            
+            let currentAssignee = overrides.has(dateStr) ? overrides.get(dateStr) : yearlyAssignments.get(dateStr);
+            
+            overrideMemberSelect.innerHTML = '<option value="">担当なし</option>';
+            members.forEach(m => {
+                const selected = m.name === currentAssignee ? 'selected' : '';
+                overrideMemberSelect.innerHTML += `<option value="${m.name}" ${selected}>${m.name}</option>`;
+            });
+            if (currentAssignee && !members.some(m => m.name === currentAssignee)) {
+                 overrideMemberSelect.innerHTML += `<option value="${currentAssignee}" selected>${currentAssignee} (削除済み)</option>`;
+            }
+
+            overrideModal.classList.remove('hidden');
+        }
+        
+        saveMemberEditBtn.addEventListener('click', async () => {
+            if (!currentlyEditingMemberId) return;
+            const newConstraints = Array.from(editDayConstraintCheckboxes)
+                .filter(cb => cb.checked)
+                .map(cb => parseInt(cb.value));
+            await updateDoc(doc(membersCol, currentlyEditingMemberId), { constraints: newConstraints });
+            editMemberModal.classList.add('hidden');
+        });
+
+        saveOverrideBtn.addEventListener('click', async () => {
+            if (!currentlyEditingDate) return;
+            const selectedMember = overrideMemberSelect.value || null;
+            await setDoc(doc(overridesCol, currentlyEditingDate), { memberName: selectedMember });
+            overrideModal.classList.add('hidden');
+        });
+
+        clearOverrideBtn.addEventListener('click', async () => {
+            if (!currentlyEditingDate) return;
+            await deleteDoc(doc(overridesCol, currentlyEditingDate));
+            overrideModal.classList.add('hidden');
+        });
+        
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                await seedInitialData();
+                loadingOverlay.style.opacity = '0';
+                setTimeout(() => loadingOverlay.style.display = 'none', 300);
+            }
+        });
+        (async () => { try { await signInAnonymously(auth); } catch(e) { console.error("Auth failed:", e); } })();
+    }
+
+    // --- Modal Logic ---
+    function setupModal(modal, openBtn, closeBtn) {
+        if (openBtn) {
+            openBtn.addEventListener('click', () => {
+                modal.classList.remove('hidden');
+                if (modal.id === 'password-modal') passwordChangeForm.reset();
+            });
+        }
+        if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+        if (modal) modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.classList.add('hidden');
+        });
+    }
+    setupModal(passwordModal, openPasswordModalBtn, closePasswordModalBtn);
+    setupModal(overrideModal, null, closeOverrideModalBtn);
+    setupModal(editMemberModal, null, closeEditMemberModalBtn);
+    
+    passwordChangeForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        passwordChangeError.textContent = '';
+        const [currentPass, newPass, confirmPass] = [currentPasswordInput.value, newPasswordInput.value, confirmNewPasswordInput.value];
+        if (newPass !== confirmPass) { passwordChangeError.textContent = '新しいパスワードが一致しません。'; return; }
+        if (!newPass || newPass.length < 6) { passwordChangeError.textContent = 'パスワードは6文字以上で設定してください。'; return; }
+        try {
+            const docSnap = await getDoc(settingsDoc);
+            if (!docSnap.exists() || docSnap.data().appPassword !== currentPass) {
+                passwordChangeError.textContent = '現在のパスワードが違います。'; return;
+            }
+            await setDoc(settingsDoc, { appPassword: newPass }, { merge: true });
+            alert('パスワードが正常に変更されました。');
+            passwordModal.classList.add('hidden');
+        } catch (error) {
+            passwordChangeError.textContent = 'エラーが発生しました。';
+        }
+    });
+
+</script>
+
+</body>
+</html>
+
