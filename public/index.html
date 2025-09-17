@@ -3,699 +3,960 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>掃除当番表アプリ</title>
+    <title>Firebase 掃除当番表</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
         .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
         }
-        .calendar-day {
+        .day {
             min-height: 120px;
         }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        .modal-overlay {
-            position: fixed; inset: 0; z-index: 5000;
-            display: flex; align-items: center; justify-content: center;
-            background-color: rgba(0, 0, 0, 0.5);
-            transition: opacity 0.3s ease;
+        .day-name {
+            font-size: 0.75rem;
         }
-        
-        #loading-overlay {
-            position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.8);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 9999; transition: opacity 0.3s ease;
+        .saturday { color: #3b82f6; }
+        .sunday { color: #ef4444; }
+        .holiday-name {
+            font-size: 0.7rem;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: white;
+            background-color: #ef4444;
+            display: inline-block;
+            margin-top: 4px;
         }
-        .spinner {
-            width: 56px; height: 56px; border: 6px solid #f3f3f3;
-            border-top: 6px solid #3498db; border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .modal {
+            display: none;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .modal.flex {
+            display: flex;
+        }
+        /* トースト通知 */
+        #toast {
+            position: fixed;
+            bottom: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            transition: bottom 0.5s ease-in-out;
+            z-index: 100;
+        }
+        #toast.show {
+            bottom: 30px;
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-gray-100 text-gray-800">
 
-    <!-- Login Overlay -->
-    <div id="login-overlay" class="fixed inset-0 bg-gray-200 flex items-center justify-center z-[10000]">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm">
-            <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">ログイン</h2>
-            <p class="text-sm text-gray-500 text-center mb-6">続行するにはパスワードを入力してください。</p>
-            <form id="login-form">
-                <div class="mb-4">
-                    <label for="password-input" class="sr-only">パスワード</label>
-                    <input type="password" id="password-input" placeholder="パスワード" class="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-                <p id="login-error" class="text-red-500 text-sm text-center mb-4 h-5"></p>
-                <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-3 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors duration-200">
-                    ログイン
-                </button>
-            </form>
+    <!-- 全体を囲むコンテナ -->
+    <div id="app-container" class="p-4 md:p-8 max-w-7xl mx-auto opacity-0 transition-opacity duration-500">
+        <!-- ヘッダー -->
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-700">掃除当番表</h1>
+            <button id="settings-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">
+                <i class="fas fa-cog mr-2"></i>設定
+            </button>
+        </header>
+
+        <!-- カレンダーコントロール -->
+        <div class="flex items-center justify-center space-x-4 mb-4 bg-white p-3 rounded-lg shadow">
+            <button id="prev-month" class="px-4 py-2 rounded-lg hover:bg-gray-200 transition"><i class="fas fa-chevron-left"></i></button>
+            <h2 id="month-year" class="text-xl md:text-2xl font-semibold w-48 text-center"></h2>
+            <button id="next-month" class="px-4 py-2 rounded-lg hover:bg-gray-200 transition"><i class="fas fa-chevron-right"></i></button>
+            <button id="today-button" class="hidden md:block bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition">今日</button>
+        </div>
+        
+        <!-- カレンダー -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="calendar-grid border-b border-gray-200">
+                <div class="p-2 text-center font-bold day-name sunday">日</div>
+                <div class="p-2 text-center font-bold day-name">月</div>
+                <div class="p-2 text-center font-bold day-name">火</div>
+                <div class="p-2 text-center font-bold day-name">水</div>
+                <div class="p-2 text-center font-bold day-name">木</div>
+                <div class="p-2 text-center font-bold day-name">金</div>
+                <div class="p-2 text-center font-bold day-name saturday">土</div>
+            </div>
+            <div id="calendar" class="calendar-grid">
+                <!-- 日付セルはここに動的に生成されます -->
+            </div>
+        </div>
+        <div class="text-xs text-gray-500 mt-2 text-right">ユーザーID: <span id="user-id-display"></span></div>
+
+    </div>
+
+    <!-- ログインモーダル (初期状態は非表示) -->
+    <div id="login-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-sm text-center">
+            <h2 class="text-2xl font-bold mb-6">ログイン</h2>
+            <p class="text-sm text-gray-600 mb-4">設定されたパスワードを入力してください。</p>
+            <input type="password" id="password-input" class="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="パスワード">
+            <button id="login-button" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">
+                <i class="fas fa-sign-in-alt mr-2"></i>ログイン
+            </button>
+            <p id="login-error" class="text-red-500 text-sm mt-4 h-5"></p>
         </div>
     </div>
 
-    <!-- Member Edit Modal -->
-    <div id="edit-member-modal" class="modal-overlay hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-800">担当者設定の編集</h2>
-                <button id="close-edit-member-modal" class="p-2 rounded-full hover:bg-gray-200">
-                     <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <p class="text-lg font-semibold text-indigo-600 mb-4" id="edit-member-modal-name"></p>
-            <div>
-                <p class="text-sm font-medium text-gray-600 mb-2">担当できる曜日:</p>
-                <div class="grid grid-cols-3 gap-2 text-sm">
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="1"> <span>月</span></label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="2"> <span>火</span></label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="3"> <span>水</span></label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="4"> <span>木</span></label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint-edit rounded text-indigo-600" value="5"> <span>金</span></label>
-                </div>
-            </div>
-            <div class="mt-6">
-                <button id="save-member-edit-btn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">保存する</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Assignment Override Modal -->
-    <div id="override-modal" class="modal-overlay hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-800">当番の変更</h2>
-                <button id="close-override-modal" class="p-2 rounded-full hover:bg-gray-200">
-                     <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <p class="text-lg font-semibold text-indigo-600 mb-4" id="override-modal-date"></p>
-            <div>
-                <label for="override-member-select" class="block text-sm font-medium text-gray-700 mb-2">担当者を変更:</label>
-                <select id="override-member-select" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <!-- Options will be populated by JS -->
-                </select>
-            </div>
-            <div class="mt-6 flex justify-between gap-4">
-                <button id="save-override-btn" class="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">保存</button>
-                <button id="clear-override-btn" class="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">自動割当に戻す</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Password Change Modal -->
-    <div id="password-modal" class="modal-overlay hidden">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-gray-800">パスワード変更</h2>
-                <button id="close-password-modal" class="p-2 rounded-full hover:bg-gray-200">
-                    <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <form id="password-change-form">
-                <div class="space-y-4">
-                    <input type="password" id="current-password" placeholder="現在のパスワード" required class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <input type="password" id="new-password" placeholder="新しいパスワード" required class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <input type="password" id="confirm-new-password" placeholder="新しいパスワード (確認)" required class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-                <p id="password-change-error" class="text-red-500 text-sm text-center mt-4 h-5"></p>
-                <button type="submit" class="w-full mt-6 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
-                    変更する
-                </button>
-            </form>
-        </div>
-    </div>
-
-    <div id="loading-overlay">
-        <div class="spinner"></div>
-    </div>
-
-    <div class="flex h-screen bg-gray-100">
-        <!-- Sidebar for controls -->
-        <aside class="w-96 bg-white p-6 shadow-lg overflow-y-auto no-scrollbar flex flex-col">
-            <div class="mb-8">
-                <h1 class="text-2xl font-bold text-gray-900">掃除当番設定</h1>
-                <p class="text-sm text-gray-500 mt-1">当番や休日をリアルタイムで共有</p>
+    <!-- 設定モーダル (初期状態は非表示) -->
+    <div id="settings-modal" class="modal fixed inset-0 bg-gray-800 bg-opacity-60 items-center justify-center z-40">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <h2 class="text-2xl font-bold text-gray-800">各種設定</h2>
+                <button id="close-settings-modal" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
             </div>
             
-            <div class="flex-grow">
-                <!-- Member Management -->
-                <div class="mb-6">
-                    <h2 class="text-lg font-semibold text-gray-700 mb-3">担当者リスト</h2>
-                    <div id="member-list" class="space-y-2 max-h-60 overflow-y-auto pr-2"></div>
-                    <div class="mt-4">
-                        <input type="text" id="new-member-name" placeholder="新しい担当者名" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <div class="mt-3">
-                            <p class="text-sm font-medium text-gray-600 mb-2">担当できる曜日 (指定なしは全曜日)</p>
-                            <div class="grid grid-cols-3 gap-2 text-sm">
-                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="1"> <span>月</span></label>
-                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="2"> <span>火</span></label>
-                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="3"> <span>水</span></label>
-                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="4"> <span>木</span></label>
-                                <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="day-constraint rounded text-indigo-600" value="5"> <span>金</span></label>
-                            </div>
-                        </div>
-                        <button id="add-member-btn" class="mt-3 w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">追加</button>
-                    </div>
+            <!-- 担当者管理 -->
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700">担当者管理</h3>
+                <div id="staff-list" class="space-y-3 mb-4"></div>
+                <div class="flex space-x-2">
+                    <input type="text" id="new-staff-name" placeholder="新しい担当者名" class="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <button id="add-staff-button" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow transition">
+                        <i class="fas fa-plus"></i> 追加
+                    </button>
                 </div>
-                
-                <!-- Roster Settings -->
-                <div class="mb-6">
-                    <h2 class="text-lg font-semibold text-gray-700 mb-3">割り当て設定</h2>
-                    <label for="roster-start-date" class="block text-sm font-medium text-gray-600">当番開始日</label>
-                    <input type="date" id="roster-start-date" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md">
-                </div>
+                <button id="reset-staff-button" class="mt-4 text-sm text-red-600 hover:underline">担当者リストを初期状態にリセット</button>
+            </div>
 
-                <!-- Holiday Management -->
-                <div class="mb-6">
-                    <h2 class="text-lg font-semibold text-gray-700 mb-3">特別休日リスト</h2>
-                    <div id="holiday-list" class="space-y-2 max-h-48 overflow-y-auto pr-2"></div>
-                    <div class="mt-4 flex gap-2">
-                        <input type="date" id="new-holiday-date" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                        <button id="add-holiday-btn" class="bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700">追加</button>
-                    </div>
+            <!-- 休日設定 -->
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-2 text-gray-700">休日設定 (YYYY-MM-DD)</h3>
+                <div class="flex space-x-2">
+                    <input type="date" id="new-holiday" class="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <button id="add-holiday-button" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow transition">追加</button>
+                </div>
+                <div id="holiday-list" class="mt-3 flex flex-wrap gap-2"></div>
+            </div>
+
+            <!-- 出勤日設定 -->
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-2 text-gray-700">出勤日設定（祝日にも関わらず出勤する日）</h3>
+                <p class="text-sm text-gray-500 mb-3">ここで指定した日付は、祝日であっても当番が割り当てられます。</p>
+                <div class="flex space-x-2">
+                    <input type="date" id="new-workday-override" class="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <button id="add-workday-override-button" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow transition">追加</button>
+                </div>
+                <div id="workday-override-list" class="mt-3 flex flex-wrap gap-2"></div>
+            </div>
+            
+            <!-- 休日一覧表示 -->
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-2 text-gray-700">現在設定されている休日一覧（土日除く）</h3>
+                <p class="text-sm text-gray-500 mb-3">日本の祝日リストです。手動で追加・削除した休日は反映されません。</p>
+                <div id="final-holiday-list" class="mt-3 p-3 bg-gray-50 rounded-md max-h-48 overflow-y-auto">
+                    <!-- List will be generated here -->
                 </div>
             </div>
 
-            <div class="mt-auto">
-                <!-- Admin Settings -->
-                <div class="border-t pt-4">
-                    <h2 class="text-lg font-semibold text-gray-700 mb-3">管理者設定</h2>
-                    <button id="open-password-modal" class="w-full bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">パスワード変更</button>
-                </div>
-
-                <div class="mt-6 text-center text-xs text-gray-400">
-                    <p>&copy; 2024 掃除当番アプリ. All rights reserved.</p>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Main content -->
-        <main class="flex-1 p-8 overflow-y-auto">
-             <div class="max-w-7xl mx-auto">
-                <div class="flex items-center justify-between mb-6">
-                    <div class="flex items-center gap-4">
-                        <button id="prev-month-btn" class="p-2 rounded-full hover:bg-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
-                        <h2 id="current-month-year" class="text-3xl font-bold text-gray-800 w-48 text-center"></h2>
-                        <button id="next-month-btn" class="p-2 rounded-full hover:bg-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
-                    </div>
-                     <button id="today-btn" class="bg-white text-indigo-600 border border-indigo-600 px-4 py-2 rounded-md hover:bg-indigo-50">今日</button>
+            <!-- その他設定 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-lg font-semibold mb-2 text-gray-700">当番割り当て開始日</h3>
+                    <input type="date" id="start-date-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
                 </div>
                 <div>
-                    <div class="grid grid-cols-7 gap-px text-center font-semibold text-sm text-gray-500 bg-gray-200 border-l border-t border-gray-200">
-                        <div class="bg-white py-3">日</div><div class="bg-white py-3">月</div><div class="bg-white py-3">火</div><div class="bg-white py-3">水</div><div class="bg-white py-3">木</div><div class="bg-white py-3">金</div><div class="bg-white py-3">土</div>
-                    </div>
-                    <div id="calendar-grid" class="calendar-grid gap-px bg-gray-200 border-l border-t border-gray-200"></div>
+                    <h3 class="text-lg font-semibold mb-2 text-gray-700">パスワード変更</h3>
+                    <input type="password" id="new-password-input" placeholder="新しいパスワード" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
                 </div>
             </div>
-        </main>
+
+            <div class="mt-8 pt-6 border-t flex justify-end">
+                <button id="save-settings-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow transition">
+                    <i class="fas fa-save mr-2"></i>保存
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 担当変更モーダル (初期状態は非表示) -->
+    <div id="edit-modal" class="modal fixed inset-0 bg-gray-800 bg-opacity-60 items-center justify-center z-40">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+            <h2 class="text-xl font-bold mb-2">担当者変更</h2>
+            <p class="text-gray-600 mb-6" id="edit-modal-date"></p>
+            
+            <div class="mb-4">
+                <label for="staff-select" class="block text-sm font-medium text-gray-700 mb-1">担当者</label>
+                <select id="staff-select" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+            </div>
+
+            <div class="flex justify-between items-center mt-8">
+                <button id="reset-assignment-button" class="text-sm text-blue-600 hover:underline">自動割当に戻す</button>
+                <div class="space-x-3">
+                    <button id="close-edit-modal" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">キャンセル</button>
+                    <button id="save-edit-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">保存</button>
+                </div>
+            </div>
+        </div>
     </div>
 
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, getDocs, writeBatch, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    <!-- トースト通知 -->
+    <div id="toast"></div>
 
-    // --- DOM ELEMENTS ---
-    const loginOverlay = document.getElementById('login-overlay');
-    const loginForm = document.getElementById('login-form');
-    const passwordInput = document.getElementById('password-input');
-    const loginError = document.getElementById('login-error');
-    const loadingOverlay = document.getElementById('loading-overlay');
-    
-    const passwordModal = document.getElementById('password-modal');
-    const openPasswordModalBtn = document.getElementById('open-password-modal');
-    const closePasswordModalBtn = document.getElementById('close-password-modal');
-    const passwordChangeForm = document.getElementById('password-change-form');
-    const currentPasswordInput = document.getElementById('current-password');
-    const newPasswordInput = document.getElementById('new-password');
-    const confirmNewPasswordInput = document.getElementById('confirm-new-password');
-    const passwordChangeError = document.getElementById('password-change-error');
+    <!-- 確認モーダル (初期状態は非表示) -->
+    <div id="confirm-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md text-center">
+            <h2 id="confirm-modal-title" class="text-xl font-bold mb-4">確認</h2>
+            <p id="confirm-modal-text" class="text-gray-600 mb-8"></p>
+            <div class="flex justify-center space-x-4">
+                <button id="confirm-modal-cancel" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-6 rounded-lg">キャンセル</button>
+                <button id="confirm-modal-ok" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-lg">OK</button>
+            </div>
+        </div>
+    </div>
 
-    const editMemberModal = document.getElementById('edit-member-modal');
-    const closeEditMemberModalBtn = document.getElementById('close-edit-member-modal');
-    const editMemberModalNameEl = document.getElementById('edit-member-modal-name');
-    const editDayConstraintCheckboxes = document.querySelectorAll('.day-constraint-edit');
-    const saveMemberEditBtn = document.getElementById('save-member-edit-btn');
-    
-    const overrideModal = document.getElementById('override-modal');
-    const closeOverrideModalBtn = document.getElementById('close-override-modal');
-    const overrideModalDateEl = document.getElementById('override-modal-date');
-    const overrideMemberSelect = document.getElementById('override-member-select');
-    const saveOverrideBtn = document.getElementById('save-override-btn');
-    const clearOverrideBtn = document.getElementById('clear-override-btn');
-    
-    // --- FIREBASE SETUP ---
-    const firebaseConfig = {
-        apiKey: "AIzaSyBBAqtjYFYorFBbA6WRzWFXyBpI9jEdgms",
-        authDomain: "its-workplace-beautification.firebaseapp.com",
-        projectId: "its-workplace-beautification",
-        storageBucket: "its-workplace-beautification.firebasestorage.app",
-        messagingSenderId: "698218638954",
-        appId: "1:698218638954:web:8940530c9aeb8a7841a413",
-        measurementId: "G-WFFH914KE9"
-    };
-    const appId = firebaseConfig.projectId || 'default-app-id';
-    let db, auth, settingsDoc;
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged,
+            signInWithCustomToken
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore,
+            doc,
+            getDoc,
+            setDoc,
+            onSnapshot,
+            collection,
+            addDoc,
+            deleteDoc,
+            query,
+            getDocs,
+            writeBatch
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    if (firebaseConfig && firebaseConfig.apiKey) {
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-        settingsDoc = doc(db, `artifacts/${appId}/public/data/settings`, 'config');
-    }
+        // --- グローバル変数と定数 ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-cleaning-roster';
 
-    loadingOverlay.style.display = 'none';
+        const firebaseConfigFromConsole = {
+            apiKey: "AIzaSyBBAqtjYFYorFBbA6WRzWFXyBpI9jEdgms",
+            authDomain: "its-workplace-beautification.firebaseapp.com",
+            projectId: "its-workplace-beautification",
+            storageBucket: "its-workplace-beautification.firebasestorage.app",
+            messagingSenderId: "698218638954",
+            appId: "1:698218638954:web:8940530c9aeb8a7841a413",
+        };
 
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        loginError.textContent = '';
-        if (!db) { loginError.textContent = 'データベース接続エラー'; return; }
+        let firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config && Object.keys(__firebase_config).length > 0)
+            ? (typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config)
+            : firebaseConfigFromConsole;
+
         try {
-            const docSnap = await getDoc(settingsDoc);
-            let correctPassword = 'password123';
-            if (docSnap.exists() && docSnap.data().appPassword) {
-                correctPassword = docSnap.data().appPassword;
+            if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
+                console.error("Firebase configuration object is invalid or placeholder.", firebaseConfig);
+                firebaseConfig = null;
             }
-            if (passwordInput.value === correctPassword) {
-                loginOverlay.style.display = 'none';
-                loadingOverlay.style.display = 'flex';
-                runApp();
-            } else {
-                loginError.textContent = 'パスワードが違います。';
-            }
-        } catch (error) {
-            loginError.textContent = 'ログインエラー';
+        } catch (e) {
+            console.error("Failed to process Firebase config:", e);
+            firebaseConfig = null;
         }
-    });
-
-    function runApp() {
+        
+        let app, auth, db;
+        let currentUserId = null;
+        
         let currentDate = new Date();
-        let members = [], holidays = [], rosterStartDate = null, overrides = new Map();
-        let yearlyAssignments = new Map(), currentYearForAssignments = null;
-        let currentlyEditingDate = null;
-        let currentlyEditingMemberId = null;
+        let staffList = [];
+        let settings = {};
+        let manualOverrides = {};
+        let holidaysJP = {}; // 祝日データ
+        let listenersAttached = false; // リスナーの多重設定を防ぐフラグ
 
-        const membersCol = collection(db, `artifacts/${appId}/public/data/members`);
-        const holidaysCol = collection(db, `artifacts/${appId}/public/data/holidays`);
-        const overridesCol = collection(db, `artifacts/${appId}/public/data/overrides`);
-        
-        const currentMonthYearEl = document.getElementById('current-month-year');
-        const calendarGridEl = document.getElementById('calendar-grid');
-        const prevMonthBtn = document.getElementById('prev-month-btn');
-        const nextMonthBtn = document.getElementById('next-month-btn');
-        const todayBtn = document.getElementById('today-btn');
-        const memberListEl = document.getElementById('member-list');
-        const newMemberNameInput = document.getElementById('new-member-name');
-        const addMemberBtn = document.getElementById('add-member-btn');
-        const dayConstraintCheckboxes = document.querySelectorAll('.day-constraint');
-        const rosterStartDateInput = document.getElementById('roster-start-date');
-        const holidayListEl = document.getElementById('holiday-list');
-        const newHolidayDateInput = document.getElementById('new-holiday-date');
-        const addHolidayBtn = document.getElementById('add-holiday-btn');
-        
-        async function seedInitialData() {
-            const settingsSnap = await getDoc(settingsDoc);
-            if (!settingsSnap.exists() || !settingsSnap.data().appPassword) {
-                await setDoc(settingsDoc, { appPassword: 'password123' }, { merge: true });
-            }
-            const membersSnapshot = await getDocs(membersCol);
-            if (membersSnapshot.empty) {
-                const batch = writeBatch(db);
-                const initialMembers = [
-                    { name: '伊勢', constraints: [] }, { name: '藤生', constraints: [] }, { name: '森田', constraints: [] },
-                    { name: '今関', constraints: [] }, { name: '吉岡', constraints: [] }, { name: '飛知和', constraints: [] },
-                    { name: '山口', constraints: [] }, { name: '小田', constraints: [] }, { name: '小林', constraints: [] },
-                    { name: '新井', constraints: [] }, { name: '中野', constraints: [] }, { name: '清水', constraints: [] },
-                    { name: '内田', constraints: [] }, { name: '岡崎', constraints: [] }, { name: '長谷川', constraints: [] },
-                    { name: '佐下橋', constraints: [] }, { name: '林部', constraints: [] }, { name: '境田', constraints: [] },
-                    { name: '山内', constraints: [] }, { name: '寺尾', constraints: [] }, { name: '白倉', constraints: [] },
-                    { name: '佐藤', constraints: [] }, { name: '村上', constraints: [] }, { name: '熊田', constraints: [] },
-                    { name: '武澤', constraints: [] }, { name: '荒井', constraints: [] }, { name: '後藤', constraints: [] },
-                    { name: '伊藤', constraints: [] }, { name: '菱山', constraints: [] }
-                ];
-                initialMembers.forEach(m => batch.set(doc(membersCol), m));
+        const initialStaffNames = [
+            '伊勢', '藤生', '森田', '今関', '吉岡', '飛知和', '山口', '小田', '小林', '新井',
+            '中野', '清水', '内田', '岡崎', '長谷川', '佐下橋', '林部', '境田', '山内',
+            '寺尾', '白倉', '佐藤', '村上', '熊田', '武澤', '荒井', '後藤', '伊藤', '菱山'
+        ];
+
+        // --- DOM要素 ---
+        const loginModal = document.getElementById('login-modal');
+        const appContainer = document.getElementById('app-container');
+        const loginButton = document.getElementById('login-button');
+        const passwordInput = document.getElementById('password-input');
+        const loginError = document.getElementById('login-error');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // --- 初期化処理 ---
+        async function addInitialStaff(staffCollectionRef) {
+            console.log("担当者データを初期化します。");
+            const batch = writeBatch(db);
+            initialStaffNames.forEach((name, index) => {
+                const newStaffRef = doc(staffCollectionRef);
+                batch.set(newStaffRef, {
+                    name: name,
+                    availableDays: [1, 2, 3, 4, 5], // デフォルトは月〜金
+                    order: index // 順番を保存
+                });
+            });
+
+            try {
                 await batch.commit();
+                showToast('初期担当者リストをデータベースに作成しました', 'success');
+            } catch (error) {
+                console.error("初期担当者の追加に失敗しました:", error);
+                showToast('初期担当者の追加に失敗しました', 'error');
             }
         }
 
-        function formatDate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
-        function isWeekend(d) { return d.getDay() === 0 || d.getDay() === 6; }
-        function isHoliday(d) { return holidays.some(h => h.date === formatDate(d)); }
-        function isWorkingDay(d) { return !isWeekend(d) && !isHoliday(d); }
-
-        function generateAssignmentsForYear(year) {
-            _generateAssignmentsForYear(year);
-        }
-
-        function _generateAssignmentsForYear(year) {
-            if (currentYearForAssignments === year && yearlyAssignments.size > 0) return;
-            
-            yearlyAssignments.clear();
-            currentYearForAssignments = year;
-            if (members.length === 0) return;
-
-            // --- New Fair Assignment Logic ---
-
-            // 1. Create a naive roster, ignoring constraints for fairness.
-            const naiveAssignments = new Map();
-            const workingDays = [];
-            const assignmentStartDate = rosterStartDate ? new Date(rosterStartDate + 'T00:00:00') : new Date(year, 0, 1);
-            let memberIndex = 0;
-            for (let d = new Date(year, 0, 1); d <= new Date(year, 11, 31); d.setDate(d.getDate() + 1)) {
-                if (d >= assignmentStartDate && isWorkingDay(d)) {
-                    const dateString = formatDate(d);
-                    workingDays.push(dateString);
-                    const member = members[memberIndex % members.length];
-                    naiveAssignments.set(dateString, member);
-                    memberIndex++;
-                }
-            }
-            
-            // 2. Resolve conflicts by swapping.
-            const finalAssignments = new Map(Array.from(naiveAssignments.entries()).map(([date, member]) => [date, member.name]));
-            const memberMap = new Map(members.map(m => [m.name, m]));
-
-            for (const dateString of workingDays) {
-                const assignedMember = naiveAssignments.get(dateString);
-                if (!assignedMember) continue;
-
-                const dayOfWeek = new Date(dateString + 'T00:00:00').getDay();
-                const constraints = assignedMember.constraints || [];
-                
-                // If there's a conflict
-                if (constraints.length > 0 && !constraints.includes(dayOfWeek)) {
-                    // Search for a swap target
-                    let swapFound = false;
-                    // Search within +/- 14 working days
-                    for (let i = 1; i <= 14 && !swapFound; i++) {
-                        const targetIndex = workingDays.indexOf(dateString);
-                        
-                        // Look forward
-                        if (targetIndex + i < workingDays.length) {
-                            const swapDateString = workingDays[targetIndex + i];
-                            const targetMember = naiveAssignments.get(swapDateString);
-                            if (targetMember) {
-                                const targetDayOfWeek = new Date(swapDateString + 'T00:00:00').getDay();
-                                const targetConstraints = targetMember.constraints || [];
-                                
-                                // Check if swap is valid
-                                const canAssignedWorkOnSwapDate = constraints.length === 0 || constraints.includes(targetDayOfWeek);
-                                const canTargetWorkOnConflictDate = targetConstraints.length === 0 || targetConstraints.includes(dayOfWeek);
-                                
-                                if (canAssignedWorkOnSwapDate && canTargetWorkOnConflictDate) {
-                                    // Perform swap in the final assignments map
-                                    finalAssignments.set(dateString, targetMember.name);
-                                    finalAssignments.set(swapDateString, assignedMember.name);
-                                    swapFound = true;
-                                }
-                            }
-                        }
-                        
-                        // Look backward
-                        if (targetIndex - i >= 0 && !swapFound) {
-                             const swapDateString = workingDays[targetIndex - i];
-                            const targetMember = naiveAssignments.get(swapDateString);
-                             if (targetMember) {
-                                const targetDayOfWeek = new Date(swapDateString + 'T00:00:00').getDay();
-                                const targetConstraints = targetMember.constraints || [];
-                                
-                                const canAssignedWorkOnSwapDate = constraints.length === 0 || constraints.includes(targetDayOfWeek);
-                                const canTargetWorkOnConflictDate = targetConstraints.length === 0 || targetConstraints.includes(dayOfWeek);
-                                
-                                if (canAssignedWorkOnSwapDate && canTargetWorkOnConflictDate) {
-                                    finalAssignments.set(dateString, targetMember.name);
-                                    finalAssignments.set(swapDateString, assignedMember.name);
-                                    swapFound = true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            yearlyAssignments = finalAssignments;
-        }
-        
-        function forceRecalculateAssignments() {
-            yearlyAssignments.clear();
-            currentYearForAssignments = null; // Force regen
-        }
-
-        function renderCalendar() {
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
-            currentMonthYearEl.textContent = `${year}年 ${month + 1}月`;
-            calendarGridEl.innerHTML = '';
-            generateAssignmentsForYear(year);
-            const firstDayOfMonth = new Date(year, month, 1).getDay();
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const todayString = formatDate(new Date());
-
-            for (let i = 0; i < firstDayOfMonth; i++) { calendarGridEl.insertAdjacentHTML('beforeend', '<div class="bg-gray-50 border-r border-b border-gray-200"></div>'); }
-
-            for (let day = 1; day <= daysInMonth; day++) {
-                const date = new Date(year, month, day);
-                const dateString = formatDate(date);
-                
-                let assignedMember = null;
-                let isOverridden = overrides.has(dateString);
-                if (isOverridden) {
-                    assignedMember = overrides.get(dateString);
-                } else {
-                    assignedMember = yearlyAssignments.get(dateString);
-                }
-
-                const isToday = dateString === todayString;
-                let cellClasses = 'calendar-day p-2 flex flex-col border-r border-b border-gray-200 transition-colors duration-200 relative ';
-                let dateClasses = 'text-sm font-medium ';
-
-                if (isToday) { cellClasses += 'bg-indigo-100 ring-2 ring-indigo-500 z-10'; dateClasses += 'text-indigo-700'; }
-                else if (isWeekend(date) || isHoliday(date)) { cellClasses += 'bg-gray-100 cursor-not-allowed'; dateClasses += 'text-gray-400'; }
-                else { cellClasses += 'bg-white hover:bg-gray-50 cursor-pointer'; dateClasses += 'text-gray-600'; }
-
-                let overrideIndicator = isOverridden ? `<span class="absolute top-1 right-1 text-xs text-blue-500 font-bold" title="手動変更済み">*</span>` : '';
-                const memberHtml = assignedMember 
-                    ? `<div class="mt-2 text-center bg-indigo-500 text-white text-xs font-semibold rounded-full py-1 px-2 truncate">${assignedMember}</div>` 
-                    : (isOverridden ? `<div class="mt-2 text-center bg-gray-400 text-white text-xs font-semibold rounded-full py-1 px-2 truncate">休み</div>` : '');
-                const holidayHtml = isHoliday(date) ? `<div class="mt-1 text-center bg-teal-100 text-teal-700 text-xs font-semibold rounded-full py-1 px-2 truncate">休日</div>` : '';
-                
-                const dayHtml = `<div class="${cellClasses}" data-date="${dateString}"><span class="${dateClasses}">${day}</span>${overrideIndicator}${memberHtml}${holidayHtml}</div>`;
-                calendarGridEl.insertAdjacentHTML('beforeend', dayHtml);
-            }
-        }
-
-        function renderMembers() {
-            memberListEl.innerHTML = '';
-            const dayMap = { 1: '月', 2: '火', 3: '水', 4: '木', 5: '金' };
-            const formatConstraints = (c) => c && c.length > 0 ? `<span class="text-xs text-indigo-600 ml-2">(${c.map(d => dayMap[d] || '').join(', ')})</span>` : '';
-            if (members.length === 0) { memberListEl.innerHTML = '<p class="text-sm text-gray-500">担当者がいません。</p>'; return; }
-            members.forEach((member) => {
-                const memberEl = document.createElement('div');
-                memberEl.className = 'flex items-center justify-between bg-gray-100 p-2 rounded-md';
-                const constraintsString = JSON.stringify(member.constraints || []);
-                memberEl.innerHTML = `
-                    <span class="text-sm text-gray-800 font-medium">${member.name}${formatConstraints(member.constraints)}</span>
-                    <div class="flex items-center">
-                        <button data-id="${member.id}" data-name="${member.name}" data-constraints='${constraintsString}' class="edit-member-btn text-gray-400 hover:text-indigo-500 p-1 rounded-full">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>
-                        </button>
-                        <button data-id="${member.id}" class="delete-member-btn text-gray-400 hover:text-red-500 p-1 rounded-full">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
-                    </div>`;
-                memberListEl.appendChild(memberEl);
-            });
-        }
-        function renderHolidays() {
-            holidayListEl.innerHTML = '';
-            if (holidays.length === 0) { holidayListEl.innerHTML = '<p class="text-sm text-gray-500">特別休日はありません。</p>'; return; }
-            const sortedHolidays = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
-            sortedHolidays.forEach(holiday => {
-                const holidayEl = document.createElement('div');
-                holidayEl.className = 'flex items-center justify-between bg-gray-100 p-2 rounded-md';
-                holidayEl.innerHTML = `<span class="text-sm text-gray-800">${holiday.date}</span><button data-id="${holiday.id}" class="delete-holiday-btn text-gray-400 hover:text-red-500 p-1 rounded-full"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
-                holidayListEl.appendChild(holidayEl);
-            });
-        }
-        
-        // --- Event Listeners and Handlers ---
-        onSnapshot(membersCol, s => { 
-            members = s.docs.map(d => ({id:d.id, ...d.data()})); 
-            members.sort((a,b) => a.name.localeCompare(b.name));
-            forceRecalculateAssignments();
-            renderMembers(); 
-            renderCalendar(); 
-        });
-        onSnapshot(holidaysCol, s => { 
-            holidays = s.docs.map(d => ({id:d.id, ...d.data()})); 
-            forceRecalculateAssignments();
-            renderHolidays(); 
-            renderCalendar(); 
-        });
-        onSnapshot(overridesCol, s => { 
-            overrides.clear(); 
-            s.docs.forEach(d => overrides.set(d.id, d.data().memberName)); 
-            renderCalendar(); 
-        });
-        onSnapshot(settingsDoc, d => { 
-            const newStartDate = d.exists() ? d.data().rosterStartDate : null;
-            if (newStartDate !== rosterStartDate) {
-                rosterStartDate = newStartDate;
-                rosterStartDateInput.value = rosterStartDate;
-                forceRecalculateAssignments();
-                renderCalendar();
-            }
-        });
-        
-        addMemberBtn.addEventListener('click', () => {
-            if (!newMemberNameInput.value.trim()) return;
-            addDoc(membersCol, { name: newMemberNameInput.value.trim(), constraints: Array.from(dayConstraintCheckboxes).filter(cb=>cb.checked).map(cb=>parseInt(cb.value)) })
-            newMemberNameInput.value = '';
-            dayConstraintCheckboxes.forEach(cb => cb.checked = false);
-        });
-        addHolidayBtn.addEventListener('click', () => {
-             if (!newHolidayDateInput.value) return;
-             addDoc(holidaysCol, { date: newHolidayDateInput.value });
-             newHolidayDateInput.value = '';
-        });
-        
-        memberListEl.addEventListener('click', e => {
-            const deleteBtn = e.target.closest('.delete-member-btn');
-            if (deleteBtn) {
-                deleteDoc(doc(membersCol, deleteBtn.dataset.id));
+        async function initializeAppAndAuth() {
+            if (!firebaseConfig) {
+                console.error("Firebase configuration is missing or invalid. App cannot start.");
+                loginModal.innerHTML = `<div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-sm text-center"><h2 class="text-2xl font-bold mb-4 text-red-600">設定エラー</h2><p>Firebaseの接続設定が不完全です。アプリを初期化できません。</p></div>`;
+                loginModal.classList.add('flex');
                 return;
             }
-            const editBtn = e.target.closest('.edit-member-btn');
-            if (editBtn) {
-                const { id, name, constraints } = editBtn.dataset;
-                openEditMemberModal(id, name, JSON.parse(constraints));
+
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+
+            // 【最重要】最初に認証を行う
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    currentUserId = user.uid;
+                    userIdDisplay.textContent = currentUserId;
+                    
+                    if (!listenersAttached) { // このチェックを追加
+                        // 最初に担当者リストが空か一度だけチェックし、空なら初期データを投入
+                        const staffCollectionRef = collection(db, `artifacts/${appId}/public/data/staff`);
+                        const initialCheckSnapshot = await getDocs(query(staffCollectionRef));
+                        if (initialCheckSnapshot.empty) {
+                            await addInitialStaff(staffCollectionRef);
+                        }
+                        
+                        // 認証後、データ監視を開始
+                        setupFirestoreListeners();
+                    }
+                    
+                    loginModal.classList.add('flex');
+                } else {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Anonymous sign-in failed", error);
+                        loginError.textContent = "認証に失敗しました。";
+                    }
+                }
+            });
+            setHolidays();
+        }
+
+        // 祝日データを直接定義
+        function setHolidays() {
+            // 2024-2026年の日本の祝日データ
+            const holidaysData = {
+                '2024-01-01': '元日', '2024-01-08': '成人の日', '2024-02-11': '建国記念の日', '2024-02-12': '振替休日', '2024-02-23': '天皇誕生日', '2024-03-20': '春分の日', '2024-04-29': '昭和の日', '2024-05-03': '憲法記念日', '2024-05-04': 'みどりの日', '2024-05-05': 'こどもの日', '2024-05-06': '振替休日', '2024-07-15': '海の日', '2024-08-11': '山の日', '2024-08-12': '振替休日', '2024-09-16': '敬老の日', '2024-09-22': '秋分の日', '2024-09-23': '振替休日', '2024-10-14': 'スポーツの日', '2024-11-03': '文化の日', '2024-11-04': '振替休日', '2024-11-23': '勤労感謝の日',
+                '2025-01-01': '元日', '2025-01-13': '成人の日', '2025-02-11': '建国記念の日', '2025-02-23': '天皇誕生日', '2025-02-24': '振替休日', '2025-03-20': '春分の日', '2025-04-29': '昭和の日', '2025-05-03': '憲法記念日', '2025-05-04': 'みどりの日', '2025-05-05': 'こどもの日', '2025-05-06': '振替休日', '2025-07-21': '海の日', '2025-08-11': '山の日', '2025-09-15': '敬老の日', '2025-09-23': '秋分の日', '2025-10-13': 'スポーツの日', '2025-11-03': '文化の日', '2025-11-23': '勤労感謝の日', '2025-11-24': '振替休日',
+                '2026-01-01': '元日', '2026-01-12': '成人の日', '2026-02-11': '建国記念の日', '2026-02-23': '天皇誕生日', '2026-03-20': '春分の日', '2026-04-29': '昭和の日', '2026-05-03': '憲法記念日', '2026-05-04': 'みどりの日', '2026-05-05': 'こどもの日', '2026-05-06': '振替休日', '2026-07-20': '海の日', '2026-08-11': '山の日', '2026-09-21': '敬老の日', '2026-09-23': '秋分の日', '2026-10-12': 'スポーツの日', '2026-11-03': '文化の日', '2026-11-23': '勤労感謝の日'
+            };
+            holidaysJP = holidaysData;
+        }
+        
+        // --- Firestoreリスナー ---
+        function setupFirestoreListeners() {
+            if (listenersAttached) return; // 多重設定を防止
+            listenersAttached = true;
+
+            const settingsRef = doc(db, `artifacts/${appId}/public/data/settings`, "config");
+            onSnapshot(settingsRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    settings = docSnap.data();
+                } else {
+                    // デフォルト設定
+                    settings = {
+                        password: 'password',
+                        startDate: new Date().toISOString().split('T')[0],
+                        holidays: [],
+                        workdayOverrides: [],
+                    };
+                }
+            });
+
+            const staffRef = collection(db, `artifacts/${appId}/public/data/staff`);
+            onSnapshot(query(staffRef), async (querySnapshot) => {
+                staffList = [];
+                let needsOrderUpdate = false;
+                const staffNameOrderMap = Object.fromEntries(initialStaffNames.map((name, index) => [name, index]));
+                const batch = writeBatch(db);
+
+                querySnapshot.forEach((doc) => {
+                    const staffData = { id: doc.id, ...doc.data() };
+                    if (staffData.order === undefined && staffNameOrderMap[staffData.name] !== undefined) {
+                        needsOrderUpdate = true;
+                        const docRef = doc(db, `artifacts/${appId}/public/data/staff`, doc.id);
+                        batch.update(docRef, { order: staffNameOrderMap[staffData.name] });
+                        staffData.order = staffNameOrderMap[staffData.name];
+                    }
+                    staffList.push(staffData);
+                });
+
+                if (needsOrderUpdate) {
+                    console.log("担当者の順番データを更新します。");
+                    try {
+                        await batch.commit();
+                        showToast('担当者の順番を更新しました。', 'success');
+                    } catch (e) {
+                        console.error("担当者の順番更新に失敗しました:", e);
+                    }
+                }
+
+                staffList.sort((a, b) => (a.order !== undefined ? a.order : 999) - (b.order !== undefined ? b.order : 999));
+                
+                renderCalendar();
+                renderSettings();
+            });
+            
+            const overridesRef = collection(db, `artifacts/${appId}/public/data/manualOverrides`);
+            onSnapshot(query(overridesRef), (querySnapshot) => {
+                manualOverrides = {};
+                querySnapshot.forEach((doc) => {
+                    manualOverrides[doc.id] = doc.data();
+                });
+                renderCalendar();
+            });
+        }
+        
+        // --- カレンダー描画 ---
+        function renderCalendar() {
+            if (!isLoggedIn()) return; // ログイン前は描画しない
+            
+            const calendarEl = document.getElementById('calendar');
+            const monthYearEl = document.getElementById('month-year');
+            calendarEl.innerHTML = '';
+            
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            monthYearEl.textContent = `${year}年 ${month + 1}月`;
+            
+            const firstDayOfMonth = new Date(year, month, 1);
+            const lastDayOfMonth = new Date(year, month + 1, 0);
+            const startingDay = firstDayOfMonth.getDay();
+
+            const assignments = calculateAssignments();
+
+            for (let i = 0; i < startingDay; i++) {
+                const dayEl = document.createElement('div');
+                dayEl.className = 'p-2 border-r border-b border-gray-200 bg-gray-50';
+                calendarEl.appendChild(dayEl);
+            }
+
+            for (let day = 1; day <= lastDayOfMonth.getDate(); day++) {
+                const date = new Date(year, month, day);
+                const dateString = toYYYYMMDD(date);
+                const dayOfWeek = date.getDay();
+                
+                const dayEl = document.createElement('div');
+                dayEl.className = 'day p-2 border-r border-b border-gray-200 flex flex-col relative';
+                
+                let dateClasses = 'font-bold text-sm';
+                if (dayOfWeek === 0) dateClasses += ' sunday';
+                if (dayOfWeek === 6) dateClasses += ' saturday';
+
+                const dateNumEl = document.createElement('span');
+                dateNumEl.className = dateClasses;
+                dateNumEl.textContent = day;
+                dayEl.appendChild(dateNumEl);
+
+                if (holidaysJP[dateString] && !(settings.workdayOverrides || []).includes(dateString)) {
+                     dayEl.classList.add('bg-red-50');
+                     dateNumEl.classList.add('sunday');
+                     const holidayEl = document.createElement('span');
+                     holidayEl.className = 'holiday-name';
+                     holidayEl.textContent = holidaysJP[dateString];
+                     dayEl.appendChild(holidayEl);
+                }
+
+                const staffName = manualOverrides[dateString]?.staffName || assignments[dateString];
+                if (staffName) {
+                    const assignmentEl = document.createElement('div');
+                    assignmentEl.className = `mt-2 p-2 rounded-md text-center text-sm font-semibold ${staffName === '休み' ? 'bg-gray-200 text-gray-600' : 'bg-blue-100 text-blue-800'}`;
+                    assignmentEl.textContent = staffName;
+                    dayEl.appendChild(assignmentEl);
+                }
+
+                if (manualOverrides[dateString]) {
+                    const indicator = document.createElement('i');
+                    indicator.className = 'fas fa-pen-square absolute top-2 right-2 text-yellow-500 text-xs';
+                    dayEl.appendChild(indicator);
+                }
+
+                dayEl.addEventListener('click', () => openEditModal(dateString));
+                calendarEl.appendChild(dayEl);
+            }
+        }
+
+        // --- 当番割り当てロジック (公平な順番) ---
+        function calculateAssignments() {
+            if (!staffList.length || !settings.startDate) return {};
+            if (staffList.length === 0) return {};
+
+            const assignments = {};
+            const assignmentQueue = [...staffList]; // 担当の順番を管理するキュー
+
+            const allPotentialHolidays = new Set([...(settings.holidays || []), ...Object.keys(holidaysJP)]);
+            const workdayOverrides = new Set(settings.workdayOverrides || []);
+            workdayOverrides.forEach(d => allPotentialHolidays.delete(d));
+
+            let currentDateIter = new Date(settings.startDate);
+            const endDate = new Date();
+            endDate.setFullYear(endDate.getFullYear() + 1);
+
+            while (currentDateIter <= endDate) {
+                const dateString = toYYYYMMDD(currentDateIter);
+                const dayOfWeek = currentDateIter.getDay();
+
+                if (dayOfWeek !== 0 && dayOfWeek !== 6 && !allPotentialHolidays.has(dateString)) {
+                    let assigned = false;
+                    
+                    // キューの中から、その曜日に担当できる人を順番に探す
+                    for (let i = 0; i < assignmentQueue.length; i++) {
+                        const staffMember = assignmentQueue[i];
+                        if (staffMember.availableDays.includes(dayOfWeek)) {
+                            // 担当者が見つかった
+                            assignments[dateString] = staffMember.name;
+                            
+                            // 担当した人をキューから削除し、末尾に移動
+                            const [assignedStaff] = assignmentQueue.splice(i, 1);
+                            assignmentQueue.push(assignedStaff);
+                            
+                            assigned = true;
+                            break; // この日の割り当ては完了
+                        }
+                    }
+
+                    if (!assigned) {
+                        assignments[dateString] = "該当者なし";
+                    }
+                }
+                currentDateIter.setDate(currentDateIter.getDate() + 1);
+            }
+            return assignments;
+        }
+
+        // --- 設定モーダル関連 ---
+        function renderSettings() {
+            const staffListEl = document.getElementById('staff-list');
+            staffListEl.innerHTML = '';
+            staffList.forEach(staff => {
+                const staffDiv = document.createElement('div');
+                staffDiv.className = 'flex items-center justify-between p-2 bg-gray-100 rounded-md';
+                staffDiv.innerHTML = `
+                    <span class="font-medium">${staff.name}</span>
+                    <div class="flex items-center space-x-2">
+                        ${[ '月', '火', '水', '木', '金'].map((day, i) => `
+                            <label class="flex items-center space-x-1 text-sm">
+                                <input type="checkbox" data-staff-id="${staff.id}" data-day="${i+1}" ${staff.availableDays.includes(i+1) ? 'checked' : ''} class="rounded text-blue-500 focus:ring-blue-400">
+                                <span>${day}</span>
+                            </label>
+                        `).join('')}
+                        <button data-staff-id="${staff.id}" class="remove-staff-button text-red-500 hover:text-red-700 p-1"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                `;
+                staffListEl.appendChild(staffDiv);
+            });
+            
+            const holidayListEl = document.getElementById('holiday-list');
+            holidayListEl.innerHTML = '';
+            (settings.holidays || []).forEach(holiday => {
+                const holidayTag = document.createElement('div');
+                holidayTag.className = 'flex items-center bg-red-100 text-red-800 text-sm font-medium px-2.5 py-1 rounded-full';
+                holidayTag.innerHTML = `
+                    <span>${holiday}</span>
+                    <button data-holiday="${holiday}" class="remove-holiday-button ml-2 text-red-500 hover:text-red-700">&times;</button>
+                `;
+                holidayListEl.appendChild(holidayTag);
+            });
+            
+            const workdayOverrideListEl = document.getElementById('workday-override-list');
+            workdayOverrideListEl.innerHTML = '';
+            (settings.workdayOverrides || []).forEach(workday => {
+                const workdayTag = document.createElement('div');
+                workdayTag.className = 'flex items-center bg-blue-100 text-blue-800 text-sm font-medium px-2.5 py-1 rounded-full';
+                workdayTag.innerHTML = `
+                    <span>${workday}</span>
+                    <button data-workday="${workday}" class="remove-workday-override-button ml-2 text-blue-500 hover:text-blue-700">&times;</button>
+                `;
+                workdayOverrideListEl.appendChild(workdayTag);
+            });
+            
+            const finalHolidayListEl = document.getElementById('final-holiday-list');
+            finalHolidayListEl.innerHTML = '';
+
+            const allPotentialHolidays = new Set([...(settings.holidays || []), ...Object.keys(holidaysJP)]);
+            const workdayOverrides = new Set(settings.workdayOverrides || []);
+            workdayOverrides.forEach(d => allPotentialHolidays.delete(d));
+
+            const finalHolidays = Array.from(allPotentialHolidays)
+                .filter(dateString => {
+                    const date = new Date(dateString);
+                    const dayOfWeek = date.getDay();
+                    return dayOfWeek !== 0 && dayOfWeek !== 6;
+                })
+                .sort();
+
+            if (finalHolidays.length > 0) {
+                const holidaysByMonth = finalHolidays.reduce((acc, dateString) => {
+                    const month = dateString.substring(0, 7);
+                    if (!acc[month]) acc[month] = [];
+                    acc[month].push(dateString);
+                    return acc;
+                }, {});
+
+                Object.keys(holidaysByMonth).sort().forEach(month => {
+                    const monthHeader = document.createElement('h4');
+                    const [year, m] = month.split('-');
+                    monthHeader.textContent = `${year}年${parseInt(m, 10)}月`;
+                    monthHeader.className = 'font-semibold text-gray-600 mt-2';
+                    finalHolidayListEl.appendChild(monthHeader);
+
+                    const dateList = document.createElement('div');
+                    dateList.className = 'flex flex-wrap gap-2 mt-1';
+                    
+                    holidaysByMonth[month].forEach(dateString => {
+                        const dateTag = document.createElement('div');
+                        dateTag.className = 'bg-red-100 text-red-800 text-sm font-medium px-2.5 py-1 rounded-full';
+                        const date = new Date(dateString);
+                        const day = date.getDate();
+                        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()];
+                        const holidayName = holidaysJP[dateString] || '指定休日';
+                        dateTag.textContent = `${day}日(${dayOfWeek}) - ${holidayName}`;
+                        dateList.appendChild(dateTag);
+                    });
+                    finalHolidayListEl.appendChild(dateList);
+                });
+
+            } else {
+                finalHolidayListEl.textContent = '現在設定されている休日はありません。';
+            }
+            document.getElementById('start-date-input').value = settings.startDate || '';
+        }
+        
+        async function saveSettings() {
+            try {
+                const batch = writeBatch(db);
+                
+                const staffCheckboxes = document.querySelectorAll('#staff-list input[type="checkbox"]');
+                const staffUpdates = {};
+                staffCheckboxes.forEach(cb => {
+                    const staffId = cb.dataset.staffId;
+                    const day = parseInt(cb.dataset.day);
+                    if (!staffUpdates[staffId]) staffUpdates[staffId] = [];
+                    if (cb.checked) {
+                        staffUpdates[staffId].push(day);
+                    }
+                });
+
+                Object.keys(staffUpdates).forEach(staffId => {
+                    const staffRef = doc(db, `artifacts/${appId}/public/data/staff`, staffId);
+                    batch.update(staffRef, { availableDays: staffUpdates[staffId] });
+                });
+
+                const newPassword = document.getElementById('new-password-input').value;
+                const newSettings = {
+                    startDate: document.getElementById('start-date-input').value,
+                    holidays: Array.from(document.querySelectorAll('.remove-holiday-button')).map(btn => btn.dataset.holiday),
+                    workdayOverrides: Array.from(document.querySelectorAll('.remove-workday-override-button')).map(btn => btn.dataset.workday)
+                };
+                if (newPassword) {
+                    newSettings.password = newPassword;
+                }
+
+                const settingsRef = doc(db, `artifacts/${appId}/public/data/settings`, "config");
+                batch.set(settingsRef, newSettings, { merge: true });
+
+                await batch.commit();
+                
+                document.getElementById('new-password-input').value = '';
+                showToast('設定を保存しました', 'success');
+                settingsModal.classList.remove('flex');
+
+            } catch (error) {
+                console.error("Error saving settings:", error);
+                showToast('設定の保存に失敗しました', 'error');
+            }
+        }
+
+        let editingDate = null;
+        function openEditModal(dateString) {
+            editingDate = dateString;
+            document.getElementById('edit-modal-date').textContent = dateString;
+            const selectEl = document.getElementById('staff-select');
+            selectEl.innerHTML = '';
+
+            const defaultOption = document.createElement('option');
+            defaultOption.value = 'auto';
+            defaultOption.textContent = '自動割り当て';
+            selectEl.appendChild(defaultOption);
+
+            const restOption = document.createElement('option');
+            restOption.value = '休み';
+            restOption.textContent = '休み';
+            selectEl.appendChild(restOption);
+
+            staffList.forEach(staff => {
+                const option = document.createElement('option');
+                option.value = staff.id;
+                option.textContent = staff.name;
+                selectEl.appendChild(option);
+            });
+            
+            if (manualOverrides[dateString]) {
+                if (manualOverrides[dateString].staffName === '休み') {
+                    selectEl.value = '休み';
+                } else {
+                    selectEl.value = manualOverrides[dateString].staffId;
+                }
+            } else {
+                selectEl.value = 'auto';
+            }
+            
+            document.getElementById('edit-modal').classList.add('flex');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('flex');
+            editingDate = null;
+        }
+
+        async function saveEdit() {
+            if (!editingDate) return;
+
+            const selectedValue = document.getElementById('staff-select').value;
+            const overrideRef = doc(db, `artifacts/${appId}/public/data/manualOverrides`, editingDate);
+
+            if (selectedValue === 'auto') {
+                await deleteOverride();
+                return;
+            }
+            
+            let data;
+            if (selectedValue === '休み') {
+                data = { staffId: null, staffName: '休み' };
+            } else {
+                const selectedStaff = staffList.find(s => s.id === selectedValue);
+                data = { staffId: selectedStaff.id, staffName: selectedStaff.name };
+            }
+
+            try {
+                await setDoc(overrideRef, data);
+                showToast('担当者を変更しました', 'success');
+                closeEditModal();
+            } catch (error) {
+                console.error("Error saving override:", error);
+                showToast('変更の保存に失敗しました', 'error');
+            }
+        }
+        
+        async function deleteOverride() {
+             if (!editingDate) return;
+             const overrideRef = doc(db, `artifacts/${appId}/public/data/manualOverrides`, editingDate);
+             try {
+                await deleteDoc(overrideRef);
+                showToast('自動割り当てに戻しました', 'success');
+                closeEditModal();
+             } catch(error) {
+                console.error("Error deleting override:", error);
+                showToast('リセットに失敗しました', 'error');
+             }
+        }
+
+        function toYYYYMMDD(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function isLoggedIn() {
+            return !loginModal.classList.contains('flex');
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = type === 'success' ? 'bg-green-500' : 'bg-red-500';
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        let confirmCallback = null;
+        const confirmModal = document.getElementById('confirm-modal');
+        function showConfirmModal(text, onConfirm) {
+            confirmModal.querySelector('#confirm-modal-text').textContent = text;
+            confirmCallback = onConfirm;
+            confirmModal.classList.add('flex');
+        }
+
+        // --- イベントリスナー ---
+        loginButton.addEventListener('click', () => {
+            if (passwordInput.value === settings.password) {
+                loginModal.classList.remove('flex');
+                appContainer.classList.remove('opacity-0');
+                renderCalendar();
+            } else {
+                loginError.textContent = 'パスワードが違います。';
+                setTimeout(() => loginError.textContent = '', 3000);
             }
         });
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loginButton.click();
+        });
 
-        holidayListEl.addEventListener('click', e => e.target.closest('.delete-holiday-btn') && deleteDoc(doc(holidaysCol, e.target.closest('.delete-holiday-btn').dataset.id)));
-        rosterStartDateInput.addEventListener('change', () => setDoc(settingsDoc, { rosterStartDate: rosterStartDateInput.value }, { merge: true }));
-        prevMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); });
-        nextMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); });
-        todayBtn.addEventListener('click', () => { currentDate = new Date(); renderCalendar(); });
-
-        calendarGridEl.addEventListener('click', (e) => {
-            const dayEl = e.target.closest('.calendar-day');
-            if (dayEl && dayEl.dataset.date) {
-                const dateStr = dayEl.dataset.date;
-                const date = new Date(dateStr + 'T00:00:00');
-                if (!isWeekend(date) && !isHoliday(date) || overrides.has(dateStr)) {
-                    openOverrideModal(dateStr);
+        document.getElementById('prev-month').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        });
+        document.getElementById('next-month').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+        document.getElementById('today-button').addEventListener('click', () => {
+            currentDate = new Date();
+            renderCalendar();
+        });
+        
+        const settingsModal = document.getElementById('settings-modal');
+        document.getElementById('settings-button').addEventListener('click', () => {
+             renderSettings(); // モーダルを開くたびに再描画
+             settingsModal.classList.add('flex');
+        });
+        document.getElementById('close-settings-modal').addEventListener('click', () => settingsModal.classList.remove('flex'));
+        
+        document.getElementById('add-staff-button').addEventListener('click', async () => {
+            const name = document.getElementById('new-staff-name').value;
+            if (name.trim()) {
+                try {
+                    const maxOrder = staffList.reduce((max, staff) => Math.max(max, (staff.order !== undefined ? staff.order : -1)), -1);
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/staff`), {
+                        name: name.trim(),
+                        availableDays: [1, 2, 3, 4, 5],
+                        order: maxOrder + 1
+                    });
+                    document.getElementById('new-staff-name').value = '';
+                    showToast('担当者を追加しました', 'success');
+                } catch (error) {
+                    console.error("Error adding staff:", error);
+                    showToast('担当者の追加に失敗しました', 'error');
                 }
             }
         });
-
-        function openEditMemberModal(id, name, constraints) {
-            currentlyEditingMemberId = id;
-            editMemberModalNameEl.textContent = name;
-            editDayConstraintCheckboxes.forEach(cb => {
-                cb.checked = (constraints || []).includes(parseInt(cb.value));
-            });
-            editMemberModal.classList.remove('hidden');
-        }
-
-        function openOverrideModal(dateStr) {
-            currentlyEditingDate = dateStr;
-            overrideModalDateEl.textContent = dateStr;
-            
-            let currentAssignee = overrides.has(dateStr) ? overrides.get(dateStr) : yearlyAssignments.get(dateStr);
-            
-            overrideMemberSelect.innerHTML = '<option value="">担当なし</option>';
-            members.forEach(m => {
-                const selected = m.name === currentAssignee ? 'selected' : '';
-                overrideMemberSelect.innerHTML += `<option value="${m.name}" ${selected}>${m.name}</option>`;
-            });
-            if (currentAssignee && !members.some(m => m.name === currentAssignee)) {
-                 overrideMemberSelect.innerHTML += `<option value="${currentAssignee}" selected>${currentAssignee} (削除済み)</option>`;
+        document.getElementById('staff-list').addEventListener('click', async (e) => {
+            const button = e.target.closest('.remove-staff-button');
+            if (button) {
+                const staffId = button.dataset.staffId;
+                const staff = staffList.find(s => s.id === staffId);
+                const staffName = staff ? staff.name : '';
+                showConfirmModal(`「${staffName}」さんを削除しますか？`, async () => {
+                    try {
+                        await deleteDoc(doc(db, `artifacts/${appId}/public/data/staff`, staffId));
+                        showToast('担当者を削除しました', 'success');
+                    } catch (error) {
+                        console.error("Error removing staff:", error);
+                        showToast('担当者の削除に失敗しました', 'error');
+                    }
+                });
             }
-
-            overrideModal.classList.remove('hidden');
-        }
-        
-        saveMemberEditBtn.addEventListener('click', async () => {
-            if (!currentlyEditingMemberId) return;
-            const newConstraints = Array.from(editDayConstraintCheckboxes)
-                .filter(cb => cb.checked)
-                .map(cb => parseInt(cb.value));
-            await updateDoc(doc(membersCol, currentlyEditingMemberId), { constraints: newConstraints });
-            editMemberModal.classList.add('hidden');
         });
 
-        saveOverrideBtn.addEventListener('click', async () => {
-            if (!currentlyEditingDate) return;
-            const selectedMember = overrideMemberSelect.value || null;
-            await setDoc(doc(overridesCol, currentlyEditingDate), { memberName: selectedMember });
-            overrideModal.classList.add('hidden');
+        document.getElementById('add-holiday-button').addEventListener('click', () => {
+            const newHoliday = document.getElementById('new-holiday').value;
+            if (newHoliday && !(settings.holidays || []).includes(newHoliday)) {
+                if (!settings.holidays) settings.holidays = [];
+                settings.holidays.push(newHoliday);
+                settings.holidays.sort();
+                renderSettings();
+            }
+            document.getElementById('new-holiday').value = '';
         });
-
-        clearOverrideBtn.addEventListener('click', async () => {
-            if (!currentlyEditingDate) return;
-            await deleteDoc(doc(overridesCol, currentlyEditingDate));
-            overrideModal.classList.add('hidden');
+        document.getElementById('holiday-list').addEventListener('click', (e) => {
+             const button = e.target.closest('.remove-holiday-button');
+             if(button) {
+                 const holidayToRemove = button.dataset.holiday;
+                 settings.holidays = (settings.holidays || []).filter(h => h !== holidayToRemove);
+                 renderSettings();
+             }
         });
         
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                await seedInitialData();
-                loadingOverlay.style.opacity = '0';
-                setTimeout(() => loadingOverlay.style.display = 'none', 300);
+        document.getElementById('add-workday-override-button').addEventListener('click', () => {
+            const newWorkday = document.getElementById('new-workday-override').value;
+            if (newWorkday && !(settings.workdayOverrides || []).includes(newWorkday)) {
+                if (!settings.workdayOverrides) settings.workdayOverrides = [];
+                settings.workdayOverrides.push(newWorkday);
+                settings.workdayOverrides.sort();
+                renderSettings();
             }
+            document.getElementById('new-workday-override').value = '';
         });
-        (async () => { try { await signInAnonymously(auth); } catch(e) { console.error("Auth failed:", e); } })();
-    }
+        document.getElementById('workday-override-list').addEventListener('click', (e) => {
+             const button = e.target.closest('.remove-workday-override-button');
+             if(button) {
+                 const workdayToRemove = button.dataset.workday;
+                 settings.workdayOverrides = (settings.workdayOverrides || []).filter(d => d !== workdayToRemove);
+                 renderSettings();
+             }
+        });
 
-    // --- Modal Logic ---
-    function setupModal(modal, openBtn, closeBtn) {
-        if (openBtn) {
-            openBtn.addEventListener('click', () => {
-                modal.classList.remove('hidden');
-                if (modal.id === 'password-modal') passwordChangeForm.reset();
+        document.getElementById('reset-staff-button').addEventListener('click', () => {
+            showConfirmModal('現在の担当者リストをすべて削除し、初期状態に戻します。この操作は元に戻せません。よろしいですか？', async () => {
+                try {
+                    const staffCollectionRef = collection(db, `artifacts/${appId}/public/data/staff`);
+                    const querySnapshot = await getDocs(query(staffCollectionRef));
+                    const batch = writeBatch(db);
+                    querySnapshot.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+                    await batch.commit();
+                    
+                    // 削除後に改めて初期リストを追加する
+                    await addInitialStaff(staffCollectionRef); 
+                    
+                    showToast('担当者リストをリセットしました。', 'success');
+                } catch(e) {
+                    console.error("Failed to reset staff list:", e);
+                    showToast('リセットに失敗しました。', 'error');
+                }
             });
-        }
-        if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-        if (modal) modal.addEventListener('click', (e) => {
-            if (e.target === modal) modal.classList.add('hidden');
         });
-    }
-    setupModal(passwordModal, openPasswordModalBtn, closePasswordModalBtn);
-    setupModal(overrideModal, null, closeOverrideModalBtn);
-    setupModal(editMemberModal, null, closeEditMemberModalBtn);
-    
-    passwordChangeForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        passwordChangeError.textContent = '';
-        const [currentPass, newPass, confirmPass] = [currentPasswordInput.value, newPasswordInput.value, confirmNewPasswordInput.value];
-        if (newPass !== confirmPass) { passwordChangeError.textContent = '新しいパスワードが一致しません。'; return; }
-        if (!newPass || newPass.length < 6) { passwordChangeError.textContent = 'パスワードは6文字以上で設定してください。'; return; }
-        try {
-            const docSnap = await getDoc(settingsDoc);
-            if (!docSnap.exists() || docSnap.data().appPassword !== currentPass) {
-                passwordChangeError.textContent = '現在のパスワードが違います。'; return;
+
+        document.getElementById('save-settings-button').addEventListener('click', saveSettings);
+        
+        document.getElementById('close-edit-modal').addEventListener('click', closeEditModal);
+        document.getElementById('save-edit-button').addEventListener('click', saveEdit);
+        document.getElementById('reset-assignment-button').addEventListener('click', deleteOverride);
+
+        document.getElementById('confirm-modal-cancel').addEventListener('click', () => {
+            confirmModal.classList.remove('flex');
+            confirmCallback = null;
+        });
+        document.getElementById('confirm-modal-ok').addEventListener('click', () => {
+            if (confirmCallback) {
+                confirmCallback();
             }
-            await setDoc(settingsDoc, { appPassword: newPass }, { merge: true });
-            alert('パスワードが正常に変更されました。');
-            passwordModal.classList.add('hidden');
-        } catch (error) {
-            passwordChangeError.textContent = 'エラーが発生しました。';
-        }
-    });
+            confirmModal.classList.remove('flex');
+            confirmCallback = null;
+        });
 
-</script>
 
+        // --- アプリケーション開始 ---
+        initializeAppAndAuth();
+    </script>
 </body>
 </html>
 
