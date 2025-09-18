@@ -54,6 +54,22 @@
         #toast.show {
             bottom: 30px;
         }
+        .move-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        .move-btn:hover {
+            background-color: #e5e7eb;
+        }
+        .inactive-staff {
+            opacity: 0.5;
+        }
+         .assignment-box {
+            line-height: 1.2;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -64,7 +80,7 @@
         <header class="flex justify-between items-center mb-6">
             <h1 class="text-2xl md:text-3xl font-bold text-gray-700">掃除当番表</h1>
             <button id="settings-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">
-                <i class="fas fa-cog mr-2"></i>設定
+                <i class="fas fa-cog mr-2"></i>管理者設定
             </button>
         </header>
 
@@ -108,9 +124,23 @@
         </div>
     </div>
 
+     <!-- 管理者ログインモーダル -->
+    <div id="admin-login-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-sm text-center">
+            <h2 class="text-2xl font-bold mb-6">管理者認証</h2>
+            <p class="text-sm text-gray-600 mb-4">管理者用パスワードを入力してください。</p>
+            <input type="password" id="admin-password-input" class="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="管理者パスワード">
+            <button id="admin-login-button" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">
+                認証
+            </button>
+             <button id="close-admin-login-modal" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg mt-2">キャンセル</button>
+            <p id="admin-login-error" class="text-red-500 text-sm mt-4 h-5"></p>
+        </div>
+    </div>
+
     <!-- 設定モーダル (初期状態は非表示) -->
     <div id="settings-modal" class="modal fixed inset-0 bg-gray-800 bg-opacity-60 items-center justify-center z-40">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-6 border-b pb-4">
                 <h2 class="text-2xl font-bold text-gray-800">各種設定</h2>
                 <button id="close-settings-modal" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
@@ -122,6 +152,7 @@
                 <div id="staff-list" class="space-y-3 mb-4"></div>
                 <div class="flex space-x-2">
                     <input type="text" id="new-staff-name" placeholder="新しい担当者名" class="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <input type="text" id="new-staff-department" placeholder="所属部署" class="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
                     <button id="add-staff-button" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow transition">
                         <i class="fas fa-plus"></i> 追加
                     </button>
@@ -153,7 +184,7 @@
             <!-- 休日一覧表示 -->
             <div class="mb-8">
                 <h3 class="text-lg font-semibold mb-2 text-gray-700">現在設定されている休日一覧（土日除く）</h3>
-                <p class="text-sm text-gray-500 mb-3">日本の祝日リストです。手動で追加・削除した休日は反映されません。</p>
+                <p class="text-sm text-gray-500 mb-3">日本の祝日と追加した休日を合わせ、出勤日設定を反映した最終的な休日リストです。</p>
                 <div id="final-holiday-list" class="mt-3 p-3 bg-gray-50 rounded-md max-h-48 overflow-y-auto">
                     <!-- List will be generated here -->
                 </div>
@@ -165,9 +196,13 @@
                     <h3 class="text-lg font-semibold mb-2 text-gray-700">当番割り当て開始日</h3>
                     <input type="date" id="start-date-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
                 </div>
-                <div>
-                    <h3 class="text-lg font-semibold mb-2 text-gray-700">パスワード変更</h3>
-                    <input type="password" id="new-password-input" placeholder="新しいパスワード" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+                 <div>
+                    <h3 class="text-lg font-semibold mb-2 text-gray-700">ログインパスワード変更</h3>
+                    <input type="password" id="new-password-input" placeholder="新しいログインパスワード" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+                </div>
+                 <div>
+                    <h3 class="text-lg font-semibold mb-2 text-gray-700">管理者パスワード変更</h3>
+                    <input type="password" id="new-admin-password-input" placeholder="新しい管理者パスワード" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
                 </div>
             </div>
 
@@ -273,11 +308,23 @@
         let holidaysJP = {}; // 祝日データ
         let listenersAttached = false; // リスナーの多重設定を防ぐフラグ
 
-        const initialStaffNames = [
-            '伊勢', '藤生', '森田', '今関', '吉岡', '飛知和', '山口', '小田', '小林', '新井',
-            '中野', '清水', '内田', '岡崎', '長谷川', '佐下橋', '林部', '境田', '山内',
-            '寺尾', '白倉', '佐藤', '村上', '熊田', '武澤', '荒井', '後藤', '伊藤', '菱山'
+        const initialStaff = [
+             {name: '伊勢', department: 'ITS'}, {name: '藤生', department: 'ITS'}, {name: '森田', department: 'ITS'}, 
+             {name: '今関', department: 'ITS'}, {name: '吉岡', department: 'ITS'}, {name: '飛知和', department: 'ITS'}, 
+             {name: '山口', department: 'ITS'}, {name: '小田', department: 'ITS'}, {name: '小林', department: 'ITS'}, 
+             {name: '新井', department: 'ITS'}, {name: '中野', department: 'ITS'}, {name: '清水', department: 'ITS'},
+             {name: '内田', department: 'ITS'}, {name: '岡崎', department: 'ITS'}, {name: '長谷川', department: 'ITS'}, 
+             {name: '佐下橋', department: 'ITS'}, {name: '林部', department: 'ITS'}, {name: '境田', department: 'ITS'}, 
+             {name: '山内', department: 'ITS'}, {name: '寺尾', department: 'ITS'}, {name: '白倉', department: 'ITS'}, 
+             {name: '佐藤', department: 'ITS'}, {name: '村上', department: 'ITS'}, {name: '熊田', department: 'ITS'}, 
+             {name: '武澤', department: 'ITS'}, {name: '荒井', department: 'ITS'}, {name: '後藤', department: 'ITS'},
+             {name: '伊藤', department: 'ITS'}, {name: '菱山', department: 'ITS'}, {name: '矢崎', department: 'CSD'}, 
+             {name: '村岡', department: 'CSD'}, {name: '鈴木', department: 'SID'}, {name: '福田', department: 'SID'}, 
+             {name: '普天間', department: 'SID'}, {name: '唐澤', department: 'SID'}, {name: '高橋', department: 'SID'}, 
+             {name: '沼田', department: 'SID'}, {name: '有澤', department: 'SID'}, {name: '入曽根', department: 'CSD'}, 
+             {name: '新楯', department: 'CSD'}, {name: '阿部', department: 'CSD'}
         ];
+
 
         // --- DOM要素 ---
         const loginModal = document.getElementById('login-modal');
@@ -286,15 +333,21 @@
         const passwordInput = document.getElementById('password-input');
         const loginError = document.getElementById('login-error');
         const userIdDisplay = document.getElementById('user-id-display');
+        const adminLoginModal = document.getElementById('admin-login-modal');
+        const adminLoginButton = document.getElementById('admin-login-button');
+        const adminPasswordInput = document.getElementById('admin-password-input');
+        const adminLoginError = document.getElementById('admin-login-error');
+        const closeAdminLoginModalButton = document.getElementById('close-admin-login-modal');
 
         // --- 初期化処理 ---
         async function addInitialStaff(staffCollectionRef) {
             console.log("担当者データを初期化します。");
             const batch = writeBatch(db);
-            initialStaffNames.forEach((name, index) => {
+            initialStaff.forEach((staff, index) => {
                 const newStaffRef = doc(staffCollectionRef);
                 batch.set(newStaffRef, {
-                    name: name,
+                    name: staff.name,
+                    department: staff.department,
                     availableDays: [1, 2, 3, 4, 5], // デフォルトは月〜金
                     order: index // 順番を保存
                 });
@@ -380,6 +433,7 @@
                     // デフォルト設定
                     settings = {
                         password: 'password',
+                        adminPassword: 'admin',
                         startDate: new Date().toISOString().split('T')[0],
                         holidays: [],
                         workdayOverrides: [],
@@ -391,7 +445,7 @@
             onSnapshot(query(staffRef), async (querySnapshot) => {
                 staffList = [];
                 let needsOrderUpdate = false;
-                const staffNameOrderMap = Object.fromEntries(initialStaffNames.map((name, index) => [name, index]));
+                const staffNameOrderMap = Object.fromEntries(initialStaff.map((s, index) => [s.name, index]));
                 const batch = writeBatch(db);
 
                 querySnapshot.forEach((doc) => {
@@ -481,11 +535,13 @@
                      dayEl.appendChild(holidayEl);
                 }
 
-                const staffName = manualOverrides[dateString]?.staffName || assignments[dateString];
-                if (staffName) {
+                const assignment = manualOverrides[dateString] || assignments[dateString];
+                if (assignment) {
+                    const staffName = assignment.staffName || assignment.name;
+                    const staffDept = assignment.staffDepartment || assignment.department || '';
                     const assignmentEl = document.createElement('div');
-                    assignmentEl.className = `mt-2 p-2 rounded-md text-center text-sm font-semibold ${staffName === '休み' ? 'bg-gray-200 text-gray-600' : 'bg-blue-100 text-blue-800'}`;
-                    assignmentEl.textContent = staffName;
+                    assignmentEl.className = `mt-2 p-2 rounded-md text-center text-sm font-semibold assignment-box ${staffName === '休み' ? 'bg-gray-200 text-gray-600' : 'bg-blue-100 text-blue-800'}`;
+                    assignmentEl.innerHTML = `${staffName}<br><span class="text-xs font-normal">${staffDept}</span>`;
                     dayEl.appendChild(assignmentEl);
                 }
 
@@ -526,9 +582,14 @@
                     // キューの中から、その曜日に担当できる人を順番に探す
                     for (let i = 0; i < assignmentQueue.length; i++) {
                         const staffMember = assignmentQueue[i];
-                        if (staffMember.availableDays.includes(dayOfWeek)) {
+                        
+                        // 開始日・最終担当日チェックを追加
+                        const isActive = (!staffMember.startDate || new Date(staffMember.startDate) <= currentDateIter) && 
+                                         (!staffMember.endDate || new Date(staffMember.endDate) >= currentDateIter);
+
+                        if (isActive && staffMember.availableDays.includes(dayOfWeek)) {
                             // 担当者が見つかった
-                            assignments[dateString] = staffMember.name;
+                            assignments[dateString] = staffMember;
                             
                             // 担当した人をキューから削除し、末尾に移動
                             const [assignedStaff] = assignmentQueue.splice(i, 1);
@@ -540,7 +601,7 @@
                     }
 
                     if (!assigned) {
-                        assignments[dateString] = "該当者なし";
+                        assignments[dateString] = { name: "該当者なし", department: "" };
                     }
                 }
                 currentDateIter.setDate(currentDateIter.getDate() + 1);
@@ -552,19 +613,46 @@
         function renderSettings() {
             const staffListEl = document.getElementById('staff-list');
             staffListEl.innerHTML = '';
-            staffList.forEach(staff => {
+            staffList.forEach((staff, index) => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // Normalize today's date
+                const isInactive = (staff.endDate && new Date(staff.endDate) < today) || (staff.startDate && new Date(staff.startDate) > today);
+
                 const staffDiv = document.createElement('div');
-                staffDiv.className = 'flex items-center justify-between p-2 bg-gray-100 rounded-md';
+                staffDiv.className = `p-2 bg-gray-100 rounded-md ${isInactive ? 'inactive-staff' : ''}`;
                 staffDiv.innerHTML = `
-                    <span class="font-medium">${staff.name}</span>
-                    <div class="flex items-center space-x-2">
-                        ${[ '月', '火', '水', '木', '金'].map((day, i) => `
-                            <label class="flex items-center space-x-1 text-sm">
-                                <input type="checkbox" data-staff-id="${staff.id}" data-day="${i+1}" ${staff.availableDays.includes(i+1) ? 'checked' : ''} class="rounded text-blue-500 focus:ring-blue-400">
-                                <span>${day}</span>
-                            </label>
-                        `).join('')}
-                        <button data-staff-id="${staff.id}" class="remove-staff-button text-red-500 hover:text-red-700 p-1"><i class="fas fa-trash-alt"></i></button>
+                    <div class="flex items-center justify-between flex-wrap">
+                        <div class="flex items-center mb-2 md:mb-0">
+                            <div class="flex flex-col">
+                               <button class="move-btn" data-index="${index}" data-direction="-1" ${index === 0 ? 'disabled' : ''}>
+                                    <i class="fas fa-chevron-up text-xs"></i>
+                                </button>
+                                <button class="move-btn" data-index="${index}" data-direction="1" ${index === staffList.length - 1 ? 'disabled' : ''}>
+                                    <i class="fas fa-chevron-down text-xs"></i>
+                                </button>
+                            </div>
+                            <div class="flex flex-col ml-2">
+                                <span class="font-medium w-24 truncate">${staff.name}</span>
+                                <input type="text" class="staff-department-input text-xs p-1 mt-1 border rounded-md" data-staff-id="${staff.id}" value="${staff.department || ''}" placeholder="所属">
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-2 text-xs text-gray-600 mb-2 md:mb-0">
+                           <label for="start-date-${staff.id}">開始日:</label>
+                           <input type="date" id="start-date-${staff.id}" class="staff-start-date p-1 border rounded-md" data-staff-id="${staff.id}" value="${staff.startDate || ''}">
+                           <label for="end-date-${staff.id}" class="ml-2">最終日:</label>
+                           <input type="date" id="end-date-${staff.id}" class="staff-end-date p-1 border rounded-md" data-staff-id="${staff.id}" value="${staff.endDate || ''}">
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            ${[ '月', '火', '水', '木', '金'].map((day, i) => `
+                                <label class="flex items-center space-x-1 text-sm">
+                                    <input type="checkbox" data-staff-id="${staff.id}" data-day="${i+1}" ${staff.availableDays.includes(i+1) ? 'checked' : ''} class="rounded text-blue-500 focus:ring-blue-400">
+                                    <span>${day}</span>
+                                </label>
+                            `).join('')}
+                            <button data-staff-id="${staff.id}" class="remove-staff-button text-red-500 hover:text-red-700 p-1"><i class="fas fa-trash-alt"></i></button>
+                        </div>
                     </div>
                 `;
                 staffListEl.appendChild(staffDiv);
@@ -650,6 +738,25 @@
             try {
                 const batch = writeBatch(db);
                 
+                // 担当者データの更新（順番、所属、開始日、最終日を含む）
+                staffList.forEach((staff, index) => {
+                    const staffRef = doc(db, `artifacts/${appId}/public/data/staff`, staff.id);
+                    const departmentInput = document.querySelector(`.staff-department-input[data-staff-id="${staff.id}"]`);
+                    const startDateInput = document.querySelector(`.staff-start-date[data-staff-id="${staff.id}"]`);
+                    const endDateInput = document.querySelector(`.staff-end-date[data-staff-id="${staff.id}"]`);
+                    
+                    const department = departmentInput ? departmentInput.value : '';
+                    const startDate = startDateInput ? startDateInput.value : '';
+                    const endDate = endDateInput ? endDateInput.value : '';
+
+                    batch.update(staffRef, { 
+                        order: index,
+                        department: department,
+                        startDate: startDate,
+                        endDate: endDate
+                    });
+                });
+                
                 const staffCheckboxes = document.querySelectorAll('#staff-list input[type="checkbox"]');
                 const staffUpdates = {};
                 staffCheckboxes.forEach(cb => {
@@ -667,6 +774,7 @@
                 });
 
                 const newPassword = document.getElementById('new-password-input').value;
+                const newAdminPassword = document.getElementById('new-admin-password-input').value;
                 const newSettings = {
                     startDate: document.getElementById('start-date-input').value,
                     holidays: Array.from(document.querySelectorAll('.remove-holiday-button')).map(btn => btn.dataset.holiday),
@@ -675,6 +783,9 @@
                 if (newPassword) {
                     newSettings.password = newPassword;
                 }
+                if (newAdminPassword) {
+                    newSettings.adminPassword = newAdminPassword;
+                }
 
                 const settingsRef = doc(db, `artifacts/${appId}/public/data/settings`, "config");
                 batch.set(settingsRef, newSettings, { merge: true });
@@ -682,6 +793,7 @@
                 await batch.commit();
                 
                 document.getElementById('new-password-input').value = '';
+                document.getElementById('new-admin-password-input').value = '';
                 showToast('設定を保存しました', 'success');
                 settingsModal.classList.remove('flex');
 
@@ -746,10 +858,10 @@
             
             let data;
             if (selectedValue === '休み') {
-                data = { staffId: null, staffName: '休み' };
+                data = { staffId: null, staffName: '休み', staffDepartment: '' };
             } else {
                 const selectedStaff = staffList.find(s => s.id === selectedValue);
-                data = { staffId: selectedStaff.id, staffName: selectedStaff.name };
+                data = { staffId: selectedStaff.id, staffName: selectedStaff.name, staffDepartment: selectedStaff.department };
             }
 
             try {
@@ -834,22 +946,45 @@
         
         const settingsModal = document.getElementById('settings-modal');
         document.getElementById('settings-button').addEventListener('click', () => {
-             renderSettings(); // モーダルを開くたびに再描画
-             settingsModal.classList.add('flex');
+            adminPasswordInput.value = '';
+            adminLoginError.textContent = '';
+            adminLoginModal.classList.add('flex');
         });
         document.getElementById('close-settings-modal').addEventListener('click', () => settingsModal.classList.remove('flex'));
+
+        adminLoginButton.addEventListener('click', () => {
+            if (adminPasswordInput.value === (settings.adminPassword || 'admin')) {
+                adminLoginModal.classList.remove('flex');
+                renderSettings();
+                settingsModal.classList.add('flex');
+            } else {
+                adminLoginError.textContent = '管理者パスワードが違います。';
+                setTimeout(() => adminLoginError.textContent = '', 3000);
+            }
+        });
+        adminPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') adminLoginButton.click();
+        });
+        closeAdminLoginModalButton.addEventListener('click', () => {
+             adminLoginModal.classList.remove('flex');
+        });
+
         
         document.getElementById('add-staff-button').addEventListener('click', async () => {
             const name = document.getElementById('new-staff-name').value;
+            const department = document.getElementById('new-staff-department').value;
+
             if (name.trim()) {
                 try {
                     const maxOrder = staffList.reduce((max, staff) => Math.max(max, (staff.order !== undefined ? staff.order : -1)), -1);
                     await addDoc(collection(db, `artifacts/${appId}/public/data/staff`), {
                         name: name.trim(),
+                        department: department.trim(),
                         availableDays: [1, 2, 3, 4, 5],
                         order: maxOrder + 1
                     });
                     document.getElementById('new-staff-name').value = '';
+                    document.getElementById('new-staff-department').value = '';
                     showToast('担当者を追加しました', 'success');
                 } catch (error) {
                     console.error("Error adding staff:", error);
@@ -872,6 +1007,17 @@
                         showToast('担当者の削除に失敗しました', 'error');
                     }
                 });
+            }
+
+            const moveButton = e.target.closest('.move-btn');
+            if (moveButton) {
+                const index = parseInt(moveButton.dataset.index);
+                const direction = parseInt(moveButton.dataset.direction);
+                const newIndex = index + direction;
+                if (newIndex >= 0 && newIndex < staffList.length) {
+                    [staffList[index], staffList[newIndex]] = [staffList[newIndex], staffList[index]];
+                    renderSettings();
+                }
             }
         });
 
